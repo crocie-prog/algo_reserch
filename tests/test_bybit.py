@@ -101,3 +101,20 @@ def test_instrument_info():
     info = bybit.fetch_instrument_info(ex, "X")
     assert info["launch_time"] == pd.Timestamp("2020-03-15", tz="UTC")
     assert info["funding_interval_minutes"] == 480
+
+
+def test_retry_on_transient_exchange_code():
+    bars = make_bars("2023-01-01", 10, "1h")
+    err = ccxt.ExchangeError('bybit {"retCode":10016,"retMsg":"svc error: Get kline failed"}')
+    ex = FakeBybit(bars.index[-1] + pd.Timedelta(hours=2), bars={("X", "60"): bars},
+                   fail_first=2, fail_exc=err)
+    assert len(bybit.fetch_klines(ex, "X", "1h", bars.index[0], retries=3)) == 10
+
+
+def test_no_retry_on_other_exchange_code():
+    bars = make_bars("2023-01-01", 10, "1h")
+    err = ccxt.BadRequest('bybit {"retCode":10001,"retMsg":"params error"}')
+    ex = FakeBybit(bars.index[-1] + pd.Timedelta(hours=2), bars={("X", "60"): bars},
+                   fail_first=1, fail_exc=err)
+    with pytest.raises(ccxt.BadRequest):
+        bybit.fetch_klines(ex, "X", "1h", bars.index[0], retries=3)

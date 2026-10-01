@@ -33,12 +33,15 @@ def _ms(ts) -> int:
 
 
 class FakeBybit:
-    def __init__(self, now, bars=None, funding=None, instruments=None, fail_first=0):
+    def __init__(self, now, bars=None, funding=None, instruments=None, fail_first=0,
+                 fail_exc=None):
         self.now = pd.Timestamp(now)
         self.bars = bars or {}            # (symbol, interval) -> DataFrame
         self.funding = funding or {}      # symbol -> Series
         self.instruments = instruments or {}
         self.fail_first = fail_first
+        self.fail_exc = fail_exc or ccxt.NetworkError("fake network error")
+        self.retry_codes = frozenset({10016})
         self.calls = []
 
     def publicGetV5MarketTime(self, params):
@@ -49,7 +52,7 @@ class FakeBybit:
         self.calls.append(("kline", dict(params)))
         if self.fail_first > 0:
             self.fail_first -= 1
-            raise ccxt.NetworkError("fake network error")
+            raise self.fail_exc
         df = self.bars.get((params["symbol"], params["interval"]))
         lim = int(params.get("limit", 200))
         if df is None:

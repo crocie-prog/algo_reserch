@@ -44,7 +44,8 @@ periods:
 fetch:
   enable_rate_limit: true
   kline_limit: 1000         # максимум баров на запрос Bybit
-  retries: 5
+  retries: 8
+  retry_codes: [10000, 10006, 10016]   # временные ошибки Bybit: тайм-аут, лимит, svc error
   backoff_seconds: 1.0      # пауза перед повтором: backoff · 2^попытка
   close_lag_seconds: 5      # бар закрыт, если open + Δ + lag ≤ серверное время
   chunk_bars: 50000         # сброс на диск каждые N баров (докачка с места обрыва)
