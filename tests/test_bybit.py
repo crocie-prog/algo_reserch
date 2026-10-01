@@ -7,10 +7,6 @@ from src.data import bybit
 from tests.fakes import FakeBybit, make_bars
 
 
-@pytest.fixture(autouse=True)
-def no_sleep(monkeypatch):
-    monkeypatch.setattr(bybit, "_sleep", lambda s: None)
-
 
 def test_last_closed_open():
     now = pd.Timestamp("2026-10-01 19:53:00", tz="UTC")
