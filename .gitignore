@@ -1,0 +1,8 @@
+data/
+results/*
+!results/trials_log.csv
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/

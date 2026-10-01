@@ -1,0 +1,93 @@
+# Конфигурация исследования. Все изменяемые числа — здесь, не в коде.
+
+universe:
+  exchange: bybit
+  category: linear          # линейные перпетуалы USDT
+  price: last               # цена last trade
+  symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
+  # Первые бары по /v5/market/kline (проверено 2026-10-01).
+  # Первый дневной бар BTC (2020-03-25) неполный — отбрасывается.
+  first_bars:
+    BTCUSDT: "2020-03-25 10:36"
+    ETHUSDT: "2021-03-15 00:00"
+    SOLUSDT: "2021-10-15 00:00"
+
+timeframes:
+  download: [1m, 15m, 1h, 1d]
+  main: 1h                  # walk-forward и отбор
+  check: [15m]              # проверка устойчивости
+  descriptive: [1d]         # только описательно, без walk-forward
+  data_only: [1m]           # только данные и проверки согласованности
+
+paths:
+  raw: data/raw/bybit       # <tf>/<SYMBOL>.parquet, funding/<SYMBOL>.parquet
+  meta: data/meta/universe.csv
+  clean: data/clean
+  results: results
+  data_quality: results/data_quality.csv
+  trials_log: results/trials_log.csv   # журнал попыток для DSR, в git
+
+periods:
+  train_end: "2023-12-31"   # включительно
+  test_start: "2024-01-01"
+  test_end: "2025-12-31"    # включительно
+
+fetch:
+  enable_rate_limit: true
+  kline_limit: 1000         # максимум баров на запрос Bybit
+  retries: 5
+
+quality:
+  sigma_window: 500         # окно скользящего σ для поиска выбросов, баров
+  sigma_mult: 10            # |ret| > sigma_mult · σ — в отчёт
+  consistency_pairs:        # агрегат младшего ТФ должен совпадать со старшим
+    - [1m, 1h]
+    - [15m, 1h]
+    - [1h, 1d]
+
+costs:
+  fee_per_side: 0.001       # 0.1% от оборота; переворот = два оборота
+  include_funding: true     # положительный funding платят лонги
+  rf: 0.0                   # одна и та же во всех сравнениях
+
+annualization:
+  days_per_year: 365
+
+walk_forward:
+  schemes: [expanding, rolling]
+  step_months: 3            # шаг — квартал
+  min_train_months: 12      # минимальное обучающее окно
+  rolling_train_months: 12  # длина скользящего окна; пересмотреть на этапе 6
+
+selection:
+  top_k: 10
+  min_train_sharpe: 0.3     # порог отказа от торговли (значение автора, не обосновано; этап 5)
+  min_trades_per_year:      # предварительно; утвердить на этапе 5
+    1h: 12
+    15m: 24
+    1d: 6
+
+strategies:
+  s2:
+    corr_with_s1_exclude: 0.8   # выше — кандидат на исключение из МСП
+  s5:
+    day_boundary: "00:00"       # UTC; позиция переносится через границу
+  s6:
+    anchor:                     # не параметр сетки
+      1h: session               # якорь UTC 00:00
+      15m: session
+      1d: rolling
+
+grids: {}                       # сетки параметров по ТФ — этапы 3 и 5
+
+portfolio:
+  weights_order: [EW, IV, RP, MS]   # MS — последним и со скепсисом
+  msp_netting: true                 # основной вариант; отдельные счета — в отчёте
+
+stats:
+  bootstrap:
+    kind: stationary          # Politis–Romano; длина блока — Politis–White
+    n_boot: 10000
+    seed: 42
+  ce_gammas: [3, 5, 10]
+  alpha: 0.05
