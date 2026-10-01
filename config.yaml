@@ -5,6 +5,9 @@ universe:
   category: linear          # линейные перпетуалы USDT
   price: last               # цена last trade
   symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
+  # Дата фиксации СОСТАВА вселенной (листинг последней пары, SOLUSDT).
+  # Это не обрезка истории: BTC и ETH используют всю доступную историю.
+  fixed_on: "2021-10-15"
   # Первые бары по /v5/market/kline (проверено 2026-10-01).
   # Первый дневной бар BTC (2020-03-25) неполный — отбрасывается.
   first_bars:
@@ -20,11 +23,17 @@ timeframes:
   data_only: [1m]           # только данные и проверки согласованности
 
 paths:
-  raw: data/raw/bybit       # <tf>/<SYMBOL>.parquet, funding/<SYMBOL>.parquet
+  raw: data/raw/bybit       # ответ API без изменений (минус незакрытый бар)
+                            # 15m/1h/1d: <tf>/<SYMBOL>.parquet
+                            # 1m: 1m/<SYMBOL>/<YYYY>.parquet (партиции по годам)
+                            # funding/<SYMBOL>.parquet
   meta: data/meta/universe.csv
-  clean: data/clean
+  clean: data/clean         # та же раскладка; без неполного первого бара; читает load()
+  refetch_log: data/meta/refetch_log.csv   # журнал --refetch-last
+  fetch_log: data/meta/fetch.log
   results: results
-  data_quality: results/data_quality.csv
+  data_quality: results/data_quality.csv            # все найденные проблемы
+  data_quality_summary: results/data_quality_summary.csv   # сводка по паре×ТФ
   trials_log: results/trials_log.csv   # журнал попыток для DSR, в git
 
 periods:
@@ -36,10 +45,17 @@ fetch:
   enable_rate_limit: true
   kline_limit: 1000         # максимум баров на запрос Bybit
   retries: 5
+  backoff_seconds: 1.0      # пауза перед повтором: backoff · 2^попытка
+  close_lag_seconds: 5      # бар закрыт, если open + Δ + lag ≤ серверное время
+  chunk_bars: 50000         # сброс на диск каждые N баров (докачка с места обрыва)
+  funding_limit: 200        # максимум записей funding на запрос Bybit
 
 quality:
   sigma_window: 500         # окно скользящего σ для поиска выбросов, баров
   sigma_mult: 10            # |ret| > sigma_mult · σ — в отчёт
+  price_rtol: 1.0e-9        # допуск сверки O/H/L/C при агрегации ТФ
+  volume_rtol: 1.0e-6       # допуск сверки volume/turnover
+  funding_interval_minutes: 480   # ожидаемый интервал; отклонения — в отчёт
   consistency_pairs:        # агрегат младшего ТФ должен совпадать со старшим
     - [1m, 1h]
     - [15m, 1h]
