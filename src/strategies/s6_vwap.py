@@ -12,8 +12,11 @@
 - выход long/short: |close_t − VWAP_t| ≤ e·dev_t (возврат к VWAP), 0 ≤ e < k;
 - встречный сигнал (close за противоположной полосой) — выход и переворот.
 
-Ловушки: в начале сессии dev ≈ 0 → почти нулевой порог входа, whipsaw;
-входы разрешены только после min_session_bars баров сессии. Позиция
+Ловушки: в начале сессии dev ≈ 0 → почти нулевой порог входа, whipsaw.
+Прогрев сессии: входы разрешены только начиная с min_session_bars-го бара
+сессии. min_session_bars — фиксированное значение из config.yaml
+(strategies.s6.min_session_bars, по ТФ), НЕ параметр сетки и не
+оптимизируется; выходы в начале сессии проверяются как обычно. Позиция
 переносится через 00:00 UTC, выход после смены дня — по VWAP новой сессии.
 Прогрев: rolling — w баров; session — до первой полной сессии.
 """
@@ -21,7 +24,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-WARMUP_PARAMS = ("w", "min_session_bars")
+WARMUP_PARAMS = ("w",)
 
 
 def warmup(*, anchor: str, w: int | None = None,
@@ -37,5 +40,9 @@ def vwap(df: pd.DataFrame, *, anchor: str, w: int | None = None) -> pd.DataFrame
 
 def signal(df: pd.DataFrame, *, anchor: str, k: float, e: float,
            w: int | None = None, min_session_bars: int | None = None) -> pd.Series:
-    """Позиция ∈ {−1, 0, 1} на индексе df; на прогреве 0."""
+    """Позиция ∈ {−1, 0, 1} на индексе df; на прогреве 0.
+
+    Параметры сетки: k, e (и w для rolling). anchor и min_session_bars
+    передаются из config.yaml и в сетку не входят.
+    """
     raise NotImplementedError
