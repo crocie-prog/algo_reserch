@@ -85,3 +85,31 @@ def test_cpcv_end_to_end_synthetic(cfg):
                  k_test=2, h=C.embargo_bars(gd.pos[500:]), periods_per_year=8760)
     assert len(out) == 10 and set(out["rule"]) == {"procedure", "best_is"}
     assert (out["sharpe"] > 0).all()                        # внедрённый сигнал виден на всех путях
+
+
+def test_stage6_runner_synthetic(cfg):
+    from src.cv import stage6
+    from src.data import store
+    from tests.fakes import make_bars
+    cfg["universe"]["symbols"] = ["BTCUSDT", "ETHUSDT"]
+    cfg["universe"]["warmup_only_until"] = {}
+    cfg["stage5"]["train_end_exclusive"] = "2022-01-01"
+    cfg["periods"]["train_end"] = "2021-12-31"
+    cfg["selection"]["min_trades_per_year"]["1h"] = 1
+    cfg["stage6"]["strategies"] = ["s3_donchian"]
+    cfg["grids"]["s3_donchian"]["1h"] = {"w": [24, 48, 72, 96]}
+    for i, s in enumerate(["BTCUSDT", "ETHUSDT"]):
+        df = make_bars("2021-01-01", 24 * 365, "1h", seed=300 + i)
+        df["is_downtime"] = False
+        store.write(cfg["paths"]["clean"], s, "1h", df)
+        store.write(cfg["paths"]["raw"], s, "funding", pd.DataFrame(
+            {"funding_rate": 1e-4}, index=pd.date_range("2021-01-01 08:00", periods=1095,
+                                                          freq="8h", tz="UTC")))
+    pbo, paths = stage6.run(cfg)
+    assert set(pbo["scope"]) == {"BTCUSDT", "ETHUSDT", "BTC+ETH"}
+    assert {"pbo", "p_oos_loss", "median_oos_sharpe", "embargo_share"} <= set(pbo.columns)
+    assert set(paths["scope"]) == {"BTCUSDT", "ETHUSDT", "BTC+ETH"}
+    assert len(paths[paths.scope == "BTC+ETH"]) == 10
+    big = pbo[pbo.embargo_share > 0.3]
+    for _, r in big.iterrows():                             # при большом embargo есть и S = 8
+        assert ((pbo.scope == r.scope) & (pbo.n_groups == 8)).any()
