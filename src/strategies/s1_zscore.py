@@ -62,6 +62,22 @@ def zscore(df: pd.DataFrame, *, w: int) -> pd.Series:
     return z
 
 
+def target_move(df: pd.DataFrame, *, w: int, z_entry: float, z_exit: float) -> pd.Series:
+    """Ex-ante цель сделки в долях цены: (z_entry − z_exit) · STD_w / close.
+
+    Путь z от порога входа до порога выхода в единицах σ окна. Используется
+    только для описательного показателя cost_to_target; доходность не считается.
+    NaN на прогреве и барах простоя.
+    """
+    _validate(w, z_entry, z_exit)
+    down = downtime_mask(df)
+    close = df["close"].astype("float64")
+    sd = rolling_std(close, w, down)
+    out = (z_entry - z_exit) * sd / close
+    out[down] = np.nan
+    return out
+
+
 def signal(df: pd.DataFrame, *, w: int, z_entry: float, z_exit: float) -> pd.Series:
     """Позиция ∈ {−1, 0, 1} на индексе df; на прогреве 0."""
     _validate(w, z_entry, z_exit)
