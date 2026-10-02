@@ -89,6 +89,11 @@ selection:
 strategies:
   s2:
     corr_with_s1_exclude: 0.8   # выше — кандидат на исключение из МСП
+    # S2(w, k) ≡ S1(w, z_entry=k, z_exit=0): подмножество сетки S1.
+    alias_of: s1_zscore
+    optimize: false             # отдельно не оптимизируется
+    in_msp: false               # в МСП не входит
+    log_dsr_trials: false       # попытки не пишутся в журнал DSR
   s5:
     day_boundary: "00:00"       # UTC; позиция переносится через границу
   s6:
@@ -103,6 +108,7 @@ strategies:
 grids: {}                       # сетки параметров по ТФ — этапы 3 и 5
 
 portfolio:
+  msp_strategies: [S1, S3, S4, S5, S6]   # эффективных стратегий пять (S2 ≡ частный случай S1)
   weights_order: [EW, IV, RP, MS]   # MS — последним и со скепсисом
   msp_netting: true                 # основной вариант; отдельные счета — в отчёте
 
