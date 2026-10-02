@@ -70,6 +70,31 @@ def describe(strategy: str, params_list: list[dict], *, tf: str, cfg: dict,
     return pd.DataFrame(rows)
 
 
+def position_agreement(strategy_a: str, params_a: dict, strategy_b: str, params_b: dict,
+                       *, tf: str, cfg: dict, symbols: list[str] | None = None) -> pd.DataFrame:
+    """Сходство ПОЗИЦИЙ двух стратегий (не доходностей) по каждой паре.
+
+    Окно — train от usable_from; сигналы считаются по всей загруженной
+    истории. corr_pos — корреляция Пирсона рядов позиций; share_equal —
+    доля баров с одинаковой позицией.
+    """
+    ma = importlib.import_module(f"src.strategies.{strategy_a}")
+    mb = importlib.import_module(f"src.strategies.{strategy_b}")
+    rows = []
+    for symbol in symbols or cfg["universe"]["symbols"]:
+        df = load(symbol, tf, cfg=cfg)
+        a, b = ma.signal(df, **params_a), mb.signal(df, **params_b)
+        uf = usable_from(cfg, symbol)
+        if uf is not None:
+            a, b = a[a.index >= uf], b[b.index >= uf]
+        rows.append({"symbol": symbol, "tf": tf,
+                     "a": f"{strategy_a} {json.dumps(params_a)}",
+                     "b": f"{strategy_b} {json.dumps(params_b)}",
+                     "corr_pos": float(a.corr(b)),
+                     "share_equal": float((a == b).mean())})
+    return pd.DataFrame(rows)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m src.backtest.describe")
     p.add_argument("--config", default="config.yaml")

@@ -68,14 +68,40 @@ def rolling_std(x: pd.Series, w: int, is_downtime: np.ndarray | None = None) -> 
 
 
 def true_range(df: pd.DataFrame) -> pd.Series:
-    """TR_t = max(H−L, |H−C_{t−1}|, |L−C_{t−1}|). Реализуется с S4."""
-    raise NotImplementedError
+    """TR_t = max(H−L, |H−C_{t−1}|, |L−C_{t−1}|) по рабочим барам.
+
+    C_{t−1} — close предыдущего РАБОЧЕГО бара (разрыв цены через простой
+    попадает в TR первого рабочего бара после него); у первого рабочего
+    бара TR = H − L. На барах простоя — NaN.
+    """
+    down = downtime_mask(df)
+    w = df.loc[~down, ["high", "low", "close"]].astype("float64")
+    pc = w["close"].shift(1)
+    tr = pd.concat([w["high"] - w["low"], (w["high"] - pc).abs(), (w["low"] - pc).abs()],
+                   axis=1).max(axis=1, skipna=True)
+    return tr.reindex(df.index)
 
 
 def atr_wilder(df: pd.DataFrame, n: int) -> pd.Series:
-    """ATR по Уайлдеру: первое значение — среднее TR за n баров,
-    далее ATR_t = ((n−1)·ATR_{t−1} + TR_t) / n. До бара n — NaN. Реализуется с S4."""
-    raise NotImplementedError
+    """ATR по Уайлдеру по рабочим барам: первое значение — среднее первых n TR,
+    далее ATR_t = ((n−1)·ATR_{t−1} + TR_t) / n. До n-го рабочего бара и на
+    барах простоя — NaN.
+
+    Остаточный вес начального значения через k баров — (1 − 1/n)^k
+    (≈ e^{−3} ≈ 5% через 3n баров).
+    """
+    if int(n) != n or n < 2:
+        raise ValueError("n — целое ≥ 2")
+    down = downtime_mask(df)
+    tr = true_range(df)[~down].to_numpy()
+    out = np.full(len(tr), np.nan)
+    if len(tr) >= n:
+        a = tr[:n].mean()
+        out[n - 1] = a
+        for t in range(n, len(tr)):
+            a = ((n - 1) * a + tr[t]) / n
+            out[t] = a
+    return pd.Series(out, index=df.index[~down]).reindex(df.index)
 
 
 def run_state_machine(entry_long: np.ndarray, entry_short: np.ndarray,

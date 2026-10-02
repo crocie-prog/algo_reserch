@@ -88,5 +88,12 @@ class WFResult:
 def walk_forward(df: pd.DataFrame, strategy, grid: list[dict], fold_list: list[Fold],
                  cfg: dict, *, tf: str, funding: pd.Series | None = None,
                  log_trial: Callable | None = None) -> WFResult:
-    """Для каждого фолда: evaluate_grid на train → select_topk → ensemble на val."""
+    """Для каждого фолда: evaluate_grid на train → select_topk → ensemble на val.
+
+    Сигналы считаются по всей доступной истории df (до границы, разрешённой
+    load), окна train/val вырезаются после — не пересчётом с начала окна.
+    Для рекурсивных стратегий (ATR Уайлдера, Supertrend) пересчёт с начала
+    окна меняет позиции (зависимость от начала ряда, не look-ahead); правило
+    CLAUDE.md, «Подход A».
+    """
     raise NotImplementedError
