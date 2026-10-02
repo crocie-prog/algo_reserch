@@ -31,3 +31,11 @@ def test_cost_to_target_formula(cfg):
     sig = (df["close"].rolling(48).std() / df["close"]).median()
     assert tab["median_target"].iloc[0] == pytest.approx(1.5 * sig)
     assert tab["cost_to_target"].iloc[0] == pytest.approx(0.002 / (sig * 1.5))
+
+
+def test_s3_uses_cost_to_width_name(cfg):
+    cfg["universe"]["symbols"] = ["X"]
+    cfg["universe"]["warmup_only_until"] = {}
+    store.write(cfg["paths"]["clean"], "X", "1h", make_bars("2023-01-01", 500, "1h", seed=6))
+    tab = d.describe("s3_donchian", [{"w": 24}], tf="1h", cfg=cfg)
+    assert "cost_to_width" in tab and "cost_to_target" not in tab

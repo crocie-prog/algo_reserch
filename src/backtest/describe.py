@@ -10,6 +10,10 @@ cost_to_target = издержки круга / медиана цели сдел�
 usable_from). Для S1: (z_entry − z_exit) · STD_w / close. Правило отсечения
 по этому показателю решается на этапе 5, до walk-forward.
 
+Имя показателя задаёт стратегия (COST_METRIC = (имя медианы, имя отношения));
+по умолчанию ("median_target", "cost_to_target"). У S3 это cost_to_width —
+издержки к ширине канала, с cost_to_target в одной таблице не смешивать.
+
 Это не подбор параметров: в журнал попыток DSR ничего не пишется.
 
 Окно — train (load по умолчанию) начиная с usable_from пары; сигнал
@@ -51,6 +55,7 @@ def describe(strategy: str, params_list: list[dict], *, tf: str, cfg: dict,
                 pos = pos[pos.index >= uf]
                 tgt = tgt[tgt.index >= uf] if tgt is not None else None
             med = float(tgt.median()) if tgt is not None else float("nan")
+            med_name, ratio_name = getattr(mod, "COST_METRIC", ("median_target", "cost_to_target"))
             st = position_stats(pos, periods_per_year=periods_per_year(tf, cfg))
             hours = tf_delta(tf) / pd.Timedelta(hours=1)
             rows.append({"symbol": symbol, "tf": tf, "params": json.dumps(params),
@@ -60,8 +65,8 @@ def describe(strategy: str, params_list: list[dict], *, tf: str, cfg: dict,
                          "mean_duration_h": st["mean_duration_bars"] * hours,
                          "reversal_share": st["reversal_share"],
                          "n_trades": st["n_trades"],
-                         "median_target": med,
-                         "cost_to_target": round_trip / med if med > 0 else float("nan")})
+                         med_name: med,
+                         ratio_name: round_trip / med if med > 0 else float("nan")})
     return pd.DataFrame(rows)
 
 
