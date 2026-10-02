@@ -15,19 +15,19 @@ def _ohlc_from_1m(m1, tf):
 
 
 def test_drop_incomplete_first_bar(cfg):
-    # торги начались в 10:36: первый 1h (10:00) и 1d (00:00) бары неполные
+    # торги начались в 10:36: первые 1h (10:00) и 1d (00:00) корзины неполные
     m1 = make_bars("2020-03-25 10:36", 3 * 1440, "1min")
-    h1 = _ohlc_from_1m(m1, "1h")
-    d1 = _ohlc_from_1m(m1, "1d")
     _write_raw(cfg, "BTC", "1m", m1)
-    _write_raw(cfg, "BTC", "1h", h1)
-    _write_raw(cfg, "BTC", "1d", d1)
+    _write_raw(cfg, "BTC", "1h", _ohlc_from_1m(m1, "1h"))
+    info_m = clean.build_clean(cfg, "BTC", "1m")
     info_h = clean.build_clean(cfg, "BTC", "1h")
     info_d = clean.build_clean(cfg, "BTC", "1d")
-    info_m = clean.build_clean(cfg, "BTC", "1m")
-    assert info_h["dropped"] == [pd.Timestamp("2020-03-25 10:00", tz="UTC")]
-    assert info_d["dropped"] == [pd.Timestamp("2020-03-25", tz="UTC")]
     assert info_m["n_dropped"] == 0
+    # неполные: первая корзина и последняя (ряд обрывается в 10:35)
+    assert info_h["dropped"][0] == pd.Timestamp("2020-03-25 10:00", tz="UTC")
+    assert info_h["dropped"][-1] == pd.Timestamp("2020-03-28 10:00", tz="UTC")
+    assert info_d["dropped"] == [pd.Timestamp("2020-03-25", tz="UTC"),
+                                 pd.Timestamp("2020-03-28", tz="UTC")]
     got = store.read(cfg["paths"]["clean"], "BTC", "1h")
     assert got.index[0] == pd.Timestamp("2020-03-25 11:00", tz="UTC")
     # raw не тронут
@@ -37,7 +37,7 @@ def test_drop_incomplete_first_bar(cfg):
 def test_aligned_start_keeps_first_bar(cfg):
     m1 = make_bars("2021-03-15", 1440, "1min")
     _write_raw(cfg, "ETH", "1m", m1)
-    _write_raw(cfg, "ETH", "1h", _ohlc_from_1m(m1, "1h"))
+    clean.build_clean(cfg, "ETH", "1m")
     assert clean.build_clean(cfg, "ETH", "1h")["n_dropped"] == 0
 
 

@@ -32,8 +32,10 @@ def folds(index: pd.DatetimeIndex, *, scheme: str, step_months: int,
           allow_test: bool = False) -> list[Fold]:
     """Построить фолды по календарным кварталам.
 
-    Первый фолд начинается, когда накоплено min_train_months данных.
-    expanding: train_start = начало данных; rolling: train_start =
+    Первый фолд начинается, когда накоплено min_train_months данных,
+    отсчитанных от usable_from пары (universe.csv): данные до
+    warmup_only_until — только прогрев индикаторов, не обучение и не оценка.
+    expanding: train_start = usable_from; rolling: train_start =
     val_start − rolling_train_months.
 
     Без allow_test ни одно окно валидации не выходит за train_end

@@ -84,7 +84,8 @@ config.yaml       # пары, таймфреймы, периоды, издерж
 - Мой парсер для TSLab (`ccxt_to_tslab.py`, `merge_tslab_csv.py`) живёт вне
   этого репозитория и здесь не используется. Не трогать и не импортировать.
 - Хранение: parquet, один файл на пару символ×ТФ:
-  `data/raw/bybit/<tf>/<SYMBOL>.parquet`. Колонки: open, high, low, close,
+  `data/raw/bybit/<tf>/<SYMBOL>.parquet`; 1m — партиции по годам:
+  `data/raw/bybit/1m/<SYMBOL>/<YYYY>.parquet`. Колонки: open, high, low, close,
   volume (base), turnover (quote, через сырой эндпоинт `/v5/market/kline` —
   в стандартном OHLCV ccxt его нет).
 - Индекс — время ОТКРЫТИЯ бара, UTC, tz-aware.
@@ -93,6 +94,8 @@ config.yaml       # пары, таймфреймы, периоды, издерж
 - Последний незакрытый бар НЕ сохранять никогда.
 - Все таймфреймы качать с биржи. Согласованность: агрегат 1m → 1h должен
   совпадать с 1h-файлом, расхождения — в отчёт.
+- В `data/clean` старшие ТФ (15m, 1h, 1d) строятся агрегацией clean 1m;
+  родные бары биржи остаются в raw для диагностики.
 - История funding — отдельно, `data/raw/bybit/funding/<SYMBOL>.parquet`,
   тоже инкрементально; входит в PnL перпетуалов.
 - `data/meta/universe.csv`: символ, первый бар, последний бар, статус.
