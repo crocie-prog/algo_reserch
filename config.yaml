@@ -12,6 +12,18 @@ universe:
   # BTCUSDT 2020: неликвидный период (≈28.5 тыс. минут без сделок).
   warmup_only_until:
     BTCUSDT: "2021-01-01"
+    # H2: usable_from = позднейшая из (первый полный бар, 2021-01-01) — пол
+    # 2021-01-01 для пар с данными раньше (первый полный бар даёт clean).
+    XRPUSDT: "2021-01-01"
+    ADAUSDT: "2021-01-01"
+    DOGEUSDT: "2021-01-01"
+    XTZUSDT: "2021-01-01"
+    DOTUSDT: "2021-01-01"
+    LTCUSDT: "2021-01-01"
+    LINKUSDT: "2021-01-01"
+    ETCUSDT: "2021-01-01"
+    BNBUSDT: "2021-01-01"
+    BCHUSDT: "2021-01-01"
   # Первые бары по /v5/market/kline (проверено 2026-10-01).
   # Первый дневной бар BTC (2020-03-25) неполный — отбрасывается.
   first_bars:
@@ -42,6 +54,8 @@ paths:
   stage5_out: results/stage5            # детальные результаты этапа 5 (не в git)
   stage5_verdicts: docs/stage5_verdicts.md   # вердикты этапа 5 (в git)
   stage6_out: results/stage6            # диагностика CPCV + PBO (не в git)
+  h2_candidates: results/h2_universe_candidates.csv   # ранжирование отбора H2
+  meta_h2: data/meta/universe_h2.csv     # universe новых пар H2
 
 periods:
   train_end: "2023-12-31"   # включительно
@@ -148,6 +162,20 @@ stage6:                     # CPCV + PBO — диагностика, без ве
   cpcv_groups: 6            # C(6, 2) = 15 разбиений, 5 путей
   cpcv_test_groups: 2
   aggregate_symbols: [BTCUSDT, ETHUSDT]   # агрегат без SOL
+
+h2:                         # гипотеза H2: «S4 — свойство рынка, а не трёх пар»
+  selection:                # отбор вселенной без цен (src/data/select_universe.py)
+    quote: USDT
+    launch_max: "2021-10-15"
+    exclude_base: [BTC, ETH, SOL]
+    stablecoins: [USDC, USDT, DAI, TUSD, BUSD, USDD, FDUSD, USDE, PYUSD, USDP, GUSD,
+                  LUSD, FRAX, UST, USTC, EURS, EUR, USD1, RLUSD, USDS]
+    window_start: "2021-07-15"      # окно ликвидности — до train H2 по времени решения
+    window_end: "2021-10-14"
+    min_days: 92                    # полное окно (вариант (б))
+    top_n: 10
+  symbols: [XRPUSDT, ADAUSDT, DOGEUSDT, XTZUSDT, DOTUSDT, LTCUSDT, LINKUSDT, ETCUSDT,
+            BNBUSDT, BCHUSDT]       # результат отбора 2026-10-02 (топ-10, полное окно)
 
 grids:                          # docs/preregistration.md §2; 15m — окна в барах ×4
   s1_zscore:

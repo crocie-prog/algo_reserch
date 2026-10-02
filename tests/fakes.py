@@ -85,5 +85,7 @@ class FakeBybit:
         return {"result": {"list": rows[::-1]}}
 
     def publicGetV5MarketInstrumentsInfo(self, params):
+        if "symbol" not in params:                         # весь список, одна страница
+            return {"result": {"list": list(self.instruments.values()), "nextPageCursor": ""}}
         info = self.instruments.get(params["symbol"])
         return {"result": {"list": [info] if info else []}}
