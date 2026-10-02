@@ -50,3 +50,13 @@ def test_position_agreement_self_is_one(cfg):
     assert tab["corr_pos"].iloc[0] == pytest.approx(1.0) and tab["share_equal"].iloc[0] == 1.0
     forbidden = {"sharpe", "ann_return", "equity", "net", "gross"}
     assert not forbidden & set(tab.columns)
+
+
+def test_s6_config_params_and_carry_columns(cfg):
+    cfg["universe"]["symbols"] = ["X"]
+    cfg["universe"]["warmup_only_until"] = {}
+    store.write(cfg["paths"]["clean"], "X", "1h", make_bars("2023-01-01", 24 * 20, "1h", seed=8))
+    tab = d.describe("s6_vwap", [{"k": 1.5, "e": 0.3}], tf="1h", cfg=cfg, from_date="2023-01-05")
+    assert '"anchor": "session"' in tab["params"].iloc[0]
+    assert {"carried_share", "carried_closed_early_share", "cost_to_target"} <= set(tab.columns)
+    assert tab["from"].iloc[0] == pd.Timestamp("2023-01-05", tz="UTC")

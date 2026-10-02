@@ -39,16 +39,29 @@ from src.data.universe import usable_from
 
 
 def describe(strategy: str, params_list: list[dict], *, tf: str, cfg: dict,
-             symbols: list[str] | None = None) -> pd.DataFrame:
-    """Таблица описательных величин: строка на пару × набор параметров."""
+             symbols: list[str] | None = None,
+             from_date: str | pd.Timestamp | None = None) -> pd.DataFrame:
+    """Таблица описательных величин: строка на пару × набор параметров.
+
+    Параметры, не входящие в сетку (config_params стратегии, например якорь
+    и прогрев сессии S6), подставляются из config. from_date — начало окна
+    не раньше этой даты (например, 2022-01-01 для S6); окно = max(usable_from,
+    from_date). Для сессионной S6 добавляются доли сделок, перенесённых
+    через 00:00 UTC, и среди них — закрытых в первые min_session_bars баров.
+    """
     mod = importlib.import_module(f"src.strategies.{strategy}")
     rows = []
     for symbol in symbols or cfg["universe"]["symbols"]:
         df = load(symbol, tf, cfg=cfg)
         uf = usable_from(cfg, symbol)
+        if from_date is not None:
+            fd = pd.Timestamp(from_date, tz="UTC")
+            uf = fd if uf is None else max(uf, fd)
         c = cfg["costs"]
         round_trip = 2 * (float(c["fee_per_side"]) + float(c.get("slippage_per_side", 0.0)))
         for params in params_list:
+            if hasattr(mod, "config_params"):
+                params = {**mod.config_params(tf, cfg), **params}
             pos = mod.signal(df, **params)
             tgt = mod.target_move(df, **params) if hasattr(mod, "target_move") else None
             if uf is not None:
@@ -58,6 +71,10 @@ def describe(strategy: str, params_list: list[dict], *, tf: str, cfg: dict,
             med_name, ratio_name = getattr(mod, "COST_METRIC", ("median_target", "cost_to_target"))
             st = position_stats(pos, periods_per_year=periods_per_year(tf, cfg))
             hours = tf_delta(tf) / pd.Timedelta(hours=1)
+            extra = {}
+            if hasattr(mod, "session_carry_stats") and params.get("anchor") == "session":
+                extra = mod.session_carry_stats(df.loc[pos.index], pos,
+                                                min_session_bars=params["min_session_bars"])
             rows.append({"symbol": symbol, "tf": tf, "params": json.dumps(params),
                          "from": pos.index[0], "to": pos.index[-1],
                          "trades_per_year": st["trades_per_year"],
@@ -66,7 +83,8 @@ def describe(strategy: str, params_list: list[dict], *, tf: str, cfg: dict,
                          "reversal_share": st["reversal_share"],
                          "n_trades": st["n_trades"],
                          med_name: med,
-                         ratio_name: round_trip / med if med > 0 else float("nan")})
+                         ratio_name: round_trip / med if med > 0 else float("nan"),
+                         **extra})
     return pd.DataFrame(rows)
 
 
@@ -102,9 +120,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--tf", default="1h")
     p.add_argument("--params", nargs="+", required=True, help="JSON-словари параметров")
     p.add_argument("--out", help="CSV для сохранения")
+    p.add_argument("--from", dest="from_date", help="начало окна не раньше даты (YYYY-MM-DD)")
     a = p.parse_args(argv)
     cfg = load_config(a.config)
-    tab = describe(a.strategy, [json.loads(s) for s in a.params], tf=a.tf, cfg=cfg)
+    tab = describe(a.strategy, [json.loads(s) for s in a.params], tf=a.tf, cfg=cfg,
+                   from_date=a.from_date)
     if a.out:
         tab.to_csv(a.out, index=False)
     with pd.option_context("display.width", 200, "display.max_columns", 20):
