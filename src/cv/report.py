@@ -49,7 +49,14 @@ def _ew(root: Path, vid: str, strategy: str, rule: str) -> pd.Series | None:
 
 
 def level2(cfg: dict) -> dict:
-    """N_eff, V, SR₀ уровня 2 по всем попыткам (1h, slippage 0)."""
+    """N_eff, V, SR₀ уровня 2 по всем попыткам H1 (1h, slippage 0)."""
+    series, idle = level2_series(cfg)
+    return level2_from_series(series, idle, cfg["selection"]["neff_share"])
+
+
+def level2_series(cfg: dict) -> tuple[dict[str, pd.Series], list[str]]:
+    """EW-OOS ряды попыток H1: (торговавшие {ключ: ряд}, ключи нулевых рядов).
+    Нет результатов этапа 5 — пустые."""
     from src.cv.stage5 import STRATEGIES, rules_for
     root, tf = _root(cfg), cfg["stage5"]["tfs"][0]
     series: dict[str, pd.Series] = {}
@@ -67,7 +74,7 @@ def level2(cfg: dict) -> dict:
                         series[key] = s
                     else:
                         idle.append(key)
-    return level2_from_series(series, idle, cfg["selection"]["neff_share"])
+    return series, idle
 
 
 def level2_from_series(series: dict[str, pd.Series], idle: list[str], share: float) -> dict:

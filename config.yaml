@@ -56,6 +56,8 @@ paths:
   stage6_out: results/stage6            # диагностика CPCV + PBO (не в git)
   h2_candidates: results/h2_universe_candidates.csv   # ранжирование отбора H2
   meta_h2: data/meta/universe_h2.csv     # universe новых пар H2
+  h2_out: results/h2                     # результаты H2 (не в git)
+  h2_verdict: docs/h2_verdict.md         # вердикт H2 (в git)
 
 periods:
   train_end: "2023-12-31"   # включительно
@@ -176,6 +178,16 @@ h2:                         # гипотеза H2: «S4 — свойство р�
     top_n: 10
   symbols: [XRPUSDT, ADAUSDT, DOGEUSDT, XTZUSDT, DOTUSDT, LTCUSDT, LINKUSDT, ETCUSDT,
             BNBUSDT, BCHUSDT]       # результат отбора 2026-10-02 (топ-10, полное окно)
+  run:                      # docs/preregistration_h2.md
+    strategy: s4_supertrend
+    tf: 1h
+    scheme: expanding
+    slippage: [0.0, 0.0005]   # 0 — попытка; 0.0005 — чувствительность
+    pairs_min_positive: 8     # знаковый тест: не меньше 8 из 10
+    t_candidate: 1.0
+    t_significant: 2.0
+    dsr_significant: 0.95
+    permutations: 20          # базовая линия шума (диагностика)
   tradability:              # торгуемость во времени (src/data/liquidity.py)
     period_months: 3        # окно — предыдущий квартал
     max_no_trade_share: 0.10   # доля минут без сделок; выше — позиция 0 на квартал
