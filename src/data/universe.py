@@ -10,6 +10,8 @@ warmup_only_until (universe.warmup_only_until) — данные до этой д
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 
 from src.data import bybit, clean, store
@@ -27,11 +29,12 @@ def usable_from(cfg: dict, symbol: str) -> pd.Timestamp | None:
     return pd.Timestamp(wu, tz="UTC") if wu else None
 
 
-def build_universe(cfg: dict, exchange=None) -> pd.DataFrame:
+def build_universe(cfg: dict, exchange=None, *, symbols: list[str] | None = None,
+                   path=None) -> pd.DataFrame:
     """Собрать таблицу по слою clean (и instruments-info, если передан exchange)
-    и записать в paths.meta."""
+    и записать в path (по умолчанию paths.meta; для H2 — paths.meta_h2)."""
     rows = []
-    for symbol in cfg["universe"]["symbols"]:
+    for symbol in symbols or cfg["universe"]["symbols"]:
         row: dict = {"symbol": symbol}
         if exchange is not None:
             info = bybit.fetch_instrument_info(exchange, symbol,
@@ -63,7 +66,7 @@ def build_universe(cfg: dict, exchange=None) -> pd.DataFrame:
         row["note"] = FIXED_ON_NOTE
         rows.append(row)
     df = pd.DataFrame(rows)
-    path = cfg["paths"]["meta"]
+    path = Path(path) if path is not None else cfg["paths"]["meta"]
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
     return df
