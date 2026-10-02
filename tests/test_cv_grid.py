@@ -68,3 +68,28 @@ def test_permute_days_preserves_marginals():
     assert np.allclose(p.loc[:"2023-01-01 23:00", "close"], df.loc[:"2023-01-01 23:00", "close"])
     assert (p["high"] >= p[["open", "close"]].max(axis=1) - 1e-9).all()
     assert (p["low"] <= p[["open", "close"]].min(axis=1) + 1e-9).all()
+
+
+def test_mask_stats_equals_window_stats_on_contiguous(setup):
+    cfg, df, f, gd = setup
+    a, b = 300, 1000
+    m = np.zeros(len(df), bool)
+    m[a:b] = True
+    w = G.window_stats(gd, df.index[a], df.index[b], periods_per_year=8760)
+    k = G.mask_stats(gd, m, periods_per_year=8760)
+    pd.testing.assert_frame_equal(w, k)
+
+
+def test_mask_stats_noncontiguous_uses_real_previous_bar(setup):
+    cfg, df, f, gd = setup
+    m = np.zeros(len(df), bool)
+    m[200:400] = True
+    m[800:900] = True
+    k = G.mask_stats(gd, m, periods_per_year=8760)
+    j = 2
+    s = np.sign(gd.pos[:, j])
+    prev = np.r_[0.0, s[:-1]]
+    ent = ((s != 0) & (s != prev))
+    assert k.loc[j, "trades_per_year"] == pytest.approx(ent[m].sum() / (300 / 8760))
+    x = gd.net[m, j]
+    assert k.loc[j, "sharpe"] == pytest.approx(x.mean() / x.std(ddof=1) * np.sqrt(8760))

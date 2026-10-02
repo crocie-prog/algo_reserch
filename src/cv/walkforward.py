@@ -29,7 +29,7 @@ import pandas as pd
 
 from src.backtest import engine
 from src.backtest.metrics import metrics
-from src.cv.grid import GridData, window_rows, window_stats
+from src.cv.grid import GridData, mask_stats, window_rows, window_stats
 from src.stats.dsr import expected_max_sharpe, moments, psr
 from src.stats.neff import corr_of_columns, effective_number, participation_ratio
 
@@ -137,12 +137,15 @@ def _plateau(coords: np.ndarray, sharpe: np.ndarray, passed: np.ndarray) -> int 
     return best
 
 
-def select_fold(gd: GridData, fold: Fold, cfg: dict, *, periods_per_year: float,
-                train_from: pd.Timestamp | None = None) -> FoldSelection:
-    """Отбор конфигураций на train-окне фолда (только данные до val_start)."""
+def select_rows(gd: GridData, rows: np.ndarray, cfg: dict, *,
+                periods_per_year: float) -> dict:
+    """Отбор §4 на произвольной bool-маске строк train (для фолдов и CPCV).
+
+    Returns:
+        словарь полей FoldSelection без fold/train_start.
+    """
     sel = cfg["selection"]
-    t0 = fold.train_start if train_from is None else max(fold.train_start, train_from)
-    st = window_stats(gd, t0, fold.train_end, periods_per_year=periods_per_year)
+    st = mask_stats(gd, rows, periods_per_year=periods_per_year)
     sh = st["sharpe"].to_numpy()
     cr = st["cost_ratio"].to_numpy()
     tpy = st["trades_per_year"].to_numpy()
@@ -157,8 +160,8 @@ def select_fold(gd: GridData, fold: Fold, cfg: dict, *, periods_per_year: float,
     best = topk[0] if topk else None
     n_eff, pr, sr0, tdsr = 0, np.nan, np.nan, np.nan
     if n_pass:
-        rows = window_rows(gd.index, t0, fold.train_end)
-        x = gd.net[rows][:, idx]
+        r = np.flatnonzero(rows)
+        x = gd.net[r][:, idx]
         if n_pass > 1:
             c = corr_of_columns(x)
             n_eff = effective_number(c, sel["neff_share"])
@@ -167,14 +170,25 @@ def select_fold(gd: GridData, fold: Fold, cfg: dict, *, periods_per_year: float,
         else:
             n_eff, pr, v = 1, 1.0, 0.0
         sr0 = expected_max_sharpe(n_eff, v)
-        sr_b, sk, ku, t = moments(gd.net[rows][:, best])
+        sr_b, sk, ku, t = moments(gd.net[r][:, best])
         tdsr = psr(sr_b, sr0, n_obs=t, skew=sk, kurt=ku)
     trade = bool(n_pass > 0 and not np.isnan(tdsr) and tdsr >= sel["train_dsr_min"])
-    return FoldSelection(fold, t0, len(sh), int((~ok_cost).sum()),
-                         int((ok_cost & ~ok_trades).sum()), n_pass, k, topk,
-                         _plateau(gd.coords, sh, passed), best,
-                         float(sh[best]) if best is not None else np.nan,
-                         n_eff, pr, sr0, tdsr, trade, sh, passed)
+    return dict(n_grid=len(sh), n_excl_cost=int((~ok_cost).sum()),
+                n_excl_trades=int((ok_cost & ~ok_trades).sum()), n_pass=n_pass, k=k,
+                topk=topk, plateau=_plateau(gd.coords, sh, passed), best=best,
+                best_sharpe=float(sh[best]) if best is not None else np.nan,
+                n_eff=n_eff, pr=pr, sr0_bar=sr0, train_dsr=tdsr, trade=trade,
+                train_sharpe=sh, passed=passed)
+
+
+def select_fold(gd: GridData, fold: Fold, cfg: dict, *, periods_per_year: float,
+                train_from: pd.Timestamp | None = None) -> FoldSelection:
+    """Отбор конфигураций на train-окне фолда (только данные до val_start)."""
+    t0 = fold.train_start if train_from is None else max(fold.train_start, train_from)
+    rows = np.zeros(len(gd.index), dtype=bool)
+    rows[window_rows(gd.index, t0, fold.train_end)] = True
+    return FoldSelection(fold=fold, train_start=t0,
+                         **select_rows(gd, rows, cfg, periods_per_year=periods_per_year))
 
 
 @dataclass

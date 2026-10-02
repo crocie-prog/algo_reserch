@@ -112,3 +112,29 @@ def window_stats(gd: GridData, start: pd.Timestamp, end: pd.Timestamp, *,
     ratio = np.where(med > 0, gd.round_trip / med, np.nan)
     return pd.DataFrame({"sharpe": sr * np.sqrt(periods_per_year), "sr_bar": sr, "n_obs": t,
                          "trades_per_year": entries / years, "cost_ratio": ratio})
+
+
+def mask_stats(gd: GridData, rows: np.ndarray, *, periods_per_year: float) -> pd.DataFrame:
+    """То же, что window_stats, но по произвольной (в т.ч. несмежной) bool-маске строк.
+
+    Вход считается относительно РЕАЛЬНОГО предыдущего бара ряда (а не
+    предыдущего выбранного): позиции непрерывны по всей истории.
+    """
+    m = np.asarray(rows, dtype=bool)
+    idx = np.flatnonzero(m)
+    t = len(idx)
+    x = gd.net[idx]
+    mu = x.mean(axis=0) if t else np.full(x.shape[1], np.nan)
+    sd = x.std(axis=0, ddof=1) if t > 1 else np.full(x.shape[1], np.nan)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sr = np.where(sd > 0, mu / sd, np.nan)
+    s = np.sign(gd.pos[idx])
+    prev_idx = idx - 1
+    prev = np.where((prev_idx >= 0)[:, None], np.sign(gd.pos[np.maximum(prev_idx, 0)]), 0.0)
+    entries = ((s != 0) & (s != prev)).sum(axis=0)
+    years = t / periods_per_year if t else np.nan
+    with np.errstate(all="ignore"):
+        med = np.nanmedian(gd.target[idx], axis=0) if t else np.full(s.shape[1], np.nan)
+    ratio = np.where(med > 0, gd.round_trip / med, np.nan)
+    return pd.DataFrame({"sharpe": sr * np.sqrt(periods_per_year), "sr_bar": sr, "n_obs": t,
+                         "trades_per_year": entries / years, "cost_ratio": ratio})
