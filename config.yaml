@@ -176,6 +176,9 @@ h2:                         # гипотеза H2: «S4 — свойство р�
     top_n: 10
   symbols: [XRPUSDT, ADAUSDT, DOGEUSDT, XTZUSDT, DOTUSDT, LTCUSDT, LINKUSDT, ETCUSDT,
             BNBUSDT, BCHUSDT]       # результат отбора 2026-10-02 (топ-10, полное окно)
+  tradability:              # торгуемость во времени (src/data/liquidity.py)
+    period_months: 3        # окно — предыдущий квартал
+    max_no_trade_share: 0.10   # доля минут без сделок; выше — позиция 0 на квартал
 
 grids:                          # docs/preregistration.md §2; 15m — окна в барах ×4
   s1_zscore:

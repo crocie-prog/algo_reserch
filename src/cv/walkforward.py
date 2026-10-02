@@ -207,8 +207,14 @@ class WFResult:
 def walk_forward(gd: GridData, df: pd.DataFrame, funding: pd.Series | None,
                  fold_list: list[Fold], cfg: dict, *, slippage: float,
                  periods_per_year: float,
-                 train_from: pd.Timestamp | None = None) -> WFResult:
-    """Отбор по фолдам, сшивка позиций валидации, метрики по кварталам и итогу."""
+                 train_from: pd.Timestamp | None = None,
+                 tradable: dict | None = None) -> WFResult:
+    """Отбор по фолдам, сшивка позиций валидации, метрики по кварталам и итогу.
+
+    tradable — необязательная карта {val_start: bool} (фильтр торгуемости H2):
+    False — позиция 0 на весь квартал независимо от отбора; в таблице фолдов
+    колонка liquidity_ok.
+    """
     from src.data.universe import usable_from
 
     n = len(gd.index)
@@ -219,7 +225,8 @@ def walk_forward(gd: GridData, df: pd.DataFrame, funding: pd.Series | None,
         s = select_fold(gd, f, cfg, periods_per_year=periods_per_year, train_from=train_from)
         sels.append(s)
         rows = window_rows(gd.index, f.val_start, f.val_end)
-        if s.trade:
+        liq_ok = True if tradable is None else bool(tradable.get(f.val_start, False))
+        if s.trade and liq_ok:
             pe[rows] = np.sign(gd.pos[rows][:, s.topk]).mean(axis=1)
             pp[rows] = np.sign(gd.pos[rows][:, s.plateau])
         vs = window_stats(gd, f.val_start, f.val_end, periods_per_year=periods_per_year)
@@ -245,6 +252,7 @@ def walk_forward(gd: GridData, df: pd.DataFrame, funding: pd.Series | None,
             "n_pass": s.n_pass, "k": s.k, "n_eff": s.n_eff, "pr": s.pr,
             "best_train_sharpe": s.best_sharpe, "sr0_bar": s.sr0_bar, "train_dsr": s.train_dsr,
             "trade": s.trade,
+            "liquidity_ok": True if tradable is None else bool(tradable.get(f.val_start, False)),
             "topk_params": [gd.grid_params[i] for i in s.topk],
             "plateau_params": gd.grid_params[s.plateau] if s.plateau is not None else None,
             **{f"ens_{k}": v for k, v in me.items()},
