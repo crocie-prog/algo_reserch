@@ -22086,3 +22086,19 @@ time_utc,git,kind,variant,strategy,tf,symbol,fold,params,sharpe,n_obs,note
 2026-10-02T15:55:51.126526+00:00,86f0b6b,diagnostic,1h_train_full_net,s6_vwap,1h,SOLUSDT,,"{""k"": 3.0, ""e"": 0.25}",-0.8290448447980527,0,"без отбора, net"
 2026-10-02T15:55:51.126526+00:00,86f0b6b,diagnostic,1h_train_full_net,s6_vwap,1h,SOLUSDT,,"{""k"": 3.0, ""e"": 0.5}",-0.6705170184726991,0,"без отбора, net"
 2026-10-02T15:55:51.126526+00:00,86f0b6b,diagnostic,1h_train_full_net,s6_vwap,1h,SOLUSDT,,"{""k"": 3.0, ""e"": 1.0}",-0.9022575944469283,0,"без отбора, net"
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s1_zscore,1h,BTCUSDT,,"{""metric"": ""pbo"", ""h"": 255}",-0.8790252123820825,12870,pbo=0.357; p_loss=0.966
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s1_zscore,1h,ETHUSDT,,"{""metric"": ""pbo"", ""h"": 247}",-0.8290261357244426,12870,pbo=0.347; p_loss=0.955
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s1_zscore,1h,SOLUSDT,,"{""metric"": ""pbo"", ""h"": 241}",-0.9323596554596931,12870,pbo=0.349; p_loss=0.908
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s1_zscore,1h,BTC+ETH,,"{""metric"": ""pbo"", ""h"": 253}",-0.9371107781180888,12870,pbo=0.270; p_loss=0.997
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s3_donchian,1h,BTCUSDT,,"{""metric"": ""pbo"", ""h"": 1143}",-0.033252782656058466,12870,pbo=0.524; p_loss=0.521
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S8,s3_donchian,1h,BTCUSDT,,"{""metric"": ""pbo"", ""h"": 1143}",0.0772070161146996,70,pbo=0.443; p_loss=0.443
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s3_donchian,1h,ETHUSDT,,"{""metric"": ""pbo"", ""h"": 956}",-0.0968341622368848,12870,pbo=0.483; p_loss=0.565
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S8,s3_donchian,1h,ETHUSDT,,"{""metric"": ""pbo"", ""h"": 956}",0.07883290068793278,70,pbo=0.271; p_loss=0.457
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s3_donchian,1h,SOLUSDT,,"{""metric"": ""pbo"", ""h"": 898}",0.9566436693095194,12870,pbo=0.308; p_loss=0.240
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S8,s3_donchian,1h,SOLUSDT,,"{""metric"": ""pbo"", ""h"": 898}",1.0770826994476894,70,pbo=0.157; p_loss=0.143
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s3_donchian,1h,BTC+ETH,,"{""metric"": ""pbo"", ""h"": 1067}",-0.25782489196947567,12870,pbo=0.693; p_loss=0.697
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S8,s3_donchian,1h,BTC+ETH,,"{""metric"": ""pbo"", ""h"": 1067}",-0.23201674579745749,70,pbo=0.657; p_loss=0.643
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s4_supertrend,1h,BTCUSDT,,"{""metric"": ""pbo"", ""h"": 176}",0.4566290613209849,12870,pbo=0.180; p_loss=0.250
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s4_supertrend,1h,ETHUSDT,,"{""metric"": ""pbo"", ""h"": 166}",-0.0014366874189423492,12870,pbo=0.167; p_loss=0.501
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s4_supertrend,1h,SOLUSDT,,"{""metric"": ""pbo"", ""h"": 186}",0.8536927514483345,12870,pbo=0.245; p_loss=0.148
+2026-10-02T16:07:53.075086+00:00,c829355,diagnostic,stage6_cscv_S16,s4_supertrend,1h,BTC+ETH,,"{""metric"": ""pbo"", ""h"": 173}",0.3574979726705813,12870,pbo=0.063; p_loss=0.209
