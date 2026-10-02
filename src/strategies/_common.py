@@ -104,15 +104,29 @@ def atr_wilder(df: pd.DataFrame, n: int) -> pd.Series:
     return pd.Series(out, index=df.index[~down]).reindex(df.index)
 
 
+def last_bar_of_day(index: pd.DatetimeIndex, tf: str) -> np.ndarray:
+    """Бар, закрывающий сутки UTC: open = 00:00 следующих суток − Δ (по часам,
+    без знания будущего; на 1h — бар 23:00)."""
+    from src.config import tf_delta
+    delta = tf_delta(tf)
+    return np.asarray((index + delta) == (index + delta).floor("1D"))
+
+
 def run_state_machine(entry_long: np.ndarray, entry_short: np.ndarray,
                       exit_long: np.ndarray, exit_short: np.ndarray,
-                      frozen: np.ndarray | None = None, warmup: int = 0) -> np.ndarray:
+                      frozen: np.ndarray | None = None, warmup: int = 0,
+                      force_flat: np.ndarray | None = None) -> np.ndarray:
     """Пройти бары по правилу из docstring модуля.
 
     Встречный сигнал для лонга — entry_short, для шорта — entry_long;
     передавать его в exit_* не нужно. Условия — bool-массивы (NaN индикатора
     вызывающий код превращает в False). На барах frozen (простой) состояние
     не меняется. На [:warmup] позиция 0.
+
+    force_flat — принудительное закрытие на close бара (внутридневной режим:
+    последний бар суток). Если такой бар — простой, закрыть невозможно:
+    позиция закрывается на первом следующем рабочем баре (после чего на том
+    же баре возможен вход по обычному правилу).
 
     Returns:
         Массив позиций ∈ {−1., 0., 1.}.
@@ -123,12 +137,18 @@ def run_state_machine(entry_long: np.ndarray, entry_short: np.ndarray,
     if not (len(es) == len(xl) == len(xs) == n):
         raise ValueError("массивы условий разной длины")
     fr = np.zeros(n, bool) if frozen is None else np.asarray(frozen, bool)
+    ff = np.zeros(n, bool) if force_flat is None else np.asarray(force_flat, bool)
     out = np.zeros(n)
     state = 0.0
+    pending = False
     for t in range(max(warmup, 0), n):
         if fr[t]:
+            if ff[t] and state != 0.0:
+                pending = True
             out[t] = state
             continue
+        if pending:
+            state, pending = 0.0, False
         if state > 0 and (xl[t] or es[t]):
             state = 0.0
         elif state < 0 and (xs[t] or el[t]):
@@ -138,5 +158,7 @@ def run_state_machine(entry_long: np.ndarray, entry_short: np.ndarray,
                 state = 1.0
             elif es[t] and not el[t]:
                 state = -1.0
+        if ff[t]:
+            state = 0.0
         out[t] = state
     return out

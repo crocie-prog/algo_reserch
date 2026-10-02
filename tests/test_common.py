@@ -83,3 +83,21 @@ def test_position_stats():
     assert st["exposure"] == pytest.approx(0.7)
     assert st["mean_duration_bars"] == pytest.approx(7 / 3)
     assert st["trades_per_year"] == pytest.approx(3 / (10 / 8760))
+
+
+
+def test_force_flat_and_pending_on_frozen():
+    from src.strategies._common import last_bar_of_day
+    el = _b("11000")
+    es = _b("00000")
+    xl = _b("00000")
+    xs = _b("00000")
+    ff = _b("01001")
+    assert run_state_machine(el, es, xl, xs, force_flat=ff).tolist() == [1, 0, 0, 0, 0]
+    # принудительное закрытие на простое невозможно → на следующем рабочем баре
+    fr = _b("01000")
+    assert run_state_machine(el, es, xl, xs, frozen=fr, force_flat=ff).tolist() == [1, 1, 0, 0, 0]
+    idx = pd.date_range("2023-01-01 21:00", periods=4, freq="1h", tz="UTC")
+    assert last_bar_of_day(idx, "1h").tolist() == [False, False, True, False]
+    idx15 = pd.date_range("2023-01-01 23:30", periods=3, freq="15min", tz="UTC")
+    assert last_bar_of_day(idx15, "15m").tolist() == [False, True, False]

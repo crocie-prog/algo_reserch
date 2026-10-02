@@ -13,8 +13,17 @@ close); сутки должны быть полными — 1440 / минуты 
 - выход long: close_t ≥ P_D (возврат к P); выход short: close_t ≤ P_D;
 - встречный сигнал (close за противоположным уровнем) — выход и переворот;
 - бар простоя — состояние заморожено.
-Позиция переносится через 00:00 UTC; после смены дня выход проверяется по
-уровням нового дня. Закрытие в конце дня — отдельная гипотеза.
+В режиме carry позиция переносится через 00:00 UTC и после смены дня выход
+проверяется по уровням нового дня.
+
+Режим границы дня (day_mode, из config.yaml, не сетка):
+- intraday (B, основной на 1h/15m) — принудительное закрытие на close
+  последнего бара суток UTC (бар 23:00 на 1h); вход на этом баре не
+  открывается; если последний бар — простой, позиция закрывается на первом
+  рабочем баре новых суток (закрыть раньше невозможно);
+- carry (A) — перенос через 00:00, выход по уровням нового дня;
+- (C) замороженные уровни дня входа — не реализован.
+A и C — альтернативы: каждая при прогоне — отдельная попытка в журнале DSR.
 
 Ловушки:
 - смещение баров: бар 23:00 дня D использует уровни D (HLC дня D−1); бар 00:00
@@ -44,16 +53,23 @@ import numpy as np
 import pandas as pd
 
 from src.config import tf_minutes
-from src.strategies._common import downtime_mask, run_state_machine
+from src.strategies._common import downtime_mask, last_bar_of_day, run_state_machine
 
 WARMUP_PARAMS = ()
+DAY_MODES = ("intraday", "carry")
 
 
 def config_params(tf: str, cfg: dict) -> dict:
-    """tf — для проверки полноты суток (не параметр сетки)."""
-    if cfg["strategies"]["s5"].get("day_boundary", "00:00") != "00:00":
+    """tf (полнота суток) и day_mode из config (не параметры сетки)."""
+    s5 = cfg["strategies"]["s5"]
+    if s5.get("day_boundary", "00:00") != "00:00":
         raise ValueError("поддерживается только граница дня 00:00 UTC")
-    return {"tf": tf}
+    return {"tf": tf, "day_mode": s5.get("day_mode", {}).get(tf, "carry")}
+
+
+def _check_day_mode(day_mode: str) -> None:
+    if day_mode not in DAY_MODES:
+        raise ValueError(f"day_mode ∈ {DAY_MODES}; (C) замороженные уровни — не реализован")
 
 
 def carry_kwargs(tf: str, cfg: dict, params: dict) -> dict | None:
@@ -89,14 +105,15 @@ def daily_levels(df: pd.DataFrame, *, tf: str) -> pd.DataFrame:
     return out
 
 
-def target_move(df: pd.DataFrame, *, tf: str) -> pd.Series:
+def target_move(df: pd.DataFrame, *, tf: str, **_) -> pd.Series:
     """(R1 − S1)/2/close — для cost_to_target."""
     lv = daily_levels(df, tf=tf)
     return (lv["R1"] - lv["S1"]) / 2 / df["close"].astype("float64")
 
 
-def signal(df: pd.DataFrame, *, tf: str) -> pd.Series:
+def signal(df: pd.DataFrame, *, tf: str, day_mode: str = "carry") -> pd.Series:
     """Позиция ∈ {−1, 0, 1} на индексе df; без уровней — 0."""
+    _check_day_mode(day_mode)
     lv = daily_levels(df, tf=tf)
     c = df["close"].to_numpy(dtype="float64")
     p, s1, r1 = (lv[k].to_numpy() for k in ("P", "S1", "R1"))
@@ -106,5 +123,6 @@ def signal(df: pd.DataFrame, *, tf: str) -> pd.Series:
     es = ok & (c > r0)
     xl = ok & (c >= p0)
     xs = ok & (c <= p0)
-    pos = run_state_machine(el, es, xl, xs, frozen=downtime_mask(df))
+    ff = last_bar_of_day(df.index, tf) if day_mode == "intraday" else None
+    pos = run_state_machine(el, es, xl, xs, frozen=downtime_mask(df), force_flat=ff)
     return pd.Series(pos, index=df.index, name="pos")

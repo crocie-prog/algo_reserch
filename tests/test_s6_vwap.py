@@ -141,9 +141,11 @@ def test_param_validation(kw):
 
 
 def test_config_params(cfg):
-    assert s6.config_params("1h", cfg) == {"anchor": "session", "min_session_bars": 4}
-    assert s6.config_params("15m", cfg) == {"anchor": "session", "min_session_bars": 16}
-    assert s6.config_params("1d", cfg) == {"anchor": "rolling"}
+    assert s6.config_params("1h", cfg) == {"anchor": "session", "tf": "1h",
+                                           "day_mode": "intraday", "min_session_bars": 4}
+    assert s6.config_params("15m", cfg) == {"anchor": "session", "tf": "15m",
+                                            "day_mode": "intraday", "min_session_bars": 16}
+    assert s6.config_params("1d", cfg) == {"anchor": "rolling", "tf": "1d", "day_mode": "carry"}
 
 
 def test_session_carry_stats():
@@ -174,3 +176,38 @@ def test_truncation_real_btc_1h():
     except Exception:
         pytest.skip("нет clean BTCUSDT 1h")
     truncation_check(s6.signal, df, KW)
+
+
+# ── режим (B): внутридневной ────────────────────────────────────────────
+
+KWB = dict(KW, tf="1h", day_mode="intraday")
+
+
+def test_intraday_closes_at_2300(monkeypatch):
+    times = ["2023-01-01 00:00", "2023-01-01 01:00", "2023-01-01 02:00", "2023-01-01 03:00",
+             "2023-01-01 22:00", "2023-01-01 23:00", "2023-01-02 00:00"]
+    close = [100, 100, 100, 97, 97, 97, 97]
+    df = _path_at(monkeypatch, times, close, [100] * 7, [1] * 6 + [np.nan],
+                  [1, 2, 3, 4, 5, 6, 1])
+    # 03:00 лонг; 22:00 держим; 23:00 — принудительное закрытие; 00:00 флэт
+    assert s6.signal(df, **KWB).tolist() == [0, 0, 0, 1, 1, 0, 0]
+
+
+def test_intraday_never_carries_synthetic():
+    from src.backtest.metrics import session_carry_stats
+    df = _bars(24 * 60, seed=40)
+    pos = s6.signal(df, **KWB)
+    assert (pos[pos.index.hour == 23] == 0).all()
+    assert session_carry_stats(df.index, pos, early_bars=4)["n_carried"] == 0
+    assert (pos != 0).any()
+
+
+def test_intraday_requires_tf_and_valid_mode():
+    with pytest.raises(ValueError):
+        s6.signal(_bars(50), **dict(KW, day_mode="intraday"))
+    with pytest.raises(ValueError):
+        s6.signal(_bars(50), **dict(KW, tf="1h", day_mode="frozen_levels"))
+
+
+def test_truncation_intraday():
+    truncation_check(s6.signal, _bars(3000, seed=41), KWB)

@@ -37,6 +37,15 @@ volume — base). У автора — приближение (H+L+C)/3, взве
 Исполнение по close оптимистично для контртренда (вход на экстремуме);
 чувствительность к slippage и проверка на выборке с 2022 года — этап 5.
 
+Режим границы дня (day_mode, из config.yaml, не сетка):
+- intraday (B, основной на 1h/15m) — принудительное закрытие на close
+  последнего бара суток UTC (бар 23:00 на 1h); вход на этом баре не
+  открывается; если последний бар — простой, позиция закрывается на первом
+  рабочем баре новых суток (закрыть раньше невозможно);
+- carry (A) — перенос через 00:00, выход по уровням нового дня;
+- (C) замороженные уровни дня входа — не реализован.
+A и C — альтернативы: каждая при прогоне — отдельная попытка в журнале DSR.
+
 Ex-ante показатель — cost_to_target: издержки круга к (k − e)·dev/close
 (путь от полосы входа до полосы выхода); сопоставим с cost_to_target S1.
 """
@@ -45,17 +54,18 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.strategies._common import downtime_mask, run_state_machine
+from src.strategies._common import downtime_mask, last_bar_of_day, run_state_machine
 
 WARMUP_PARAMS = ("w",)
 ANCHORS = ("session", "rolling")
+DAY_MODES = ("intraday", "carry")
 
 
 def config_params(tf: str, cfg: dict) -> dict:
-    """anchor и min_session_bars для ТФ из config.yaml (не параметры сетки)."""
+    """anchor, tf, day_mode и min_session_bars из config.yaml (не параметры сетки)."""
     s6 = cfg["strategies"]["s6"]
     anchor = s6["anchor"][tf]
-    out = {"anchor": anchor}
+    out = {"anchor": anchor, "tf": tf, "day_mode": s6.get("day_mode", {}).get(tf, "carry")}
     if anchor == "session":
         out["min_session_bars"] = int(s6["min_session_bars"][tf])
     return out
@@ -129,7 +139,7 @@ def _entry_gate(df: pd.DataFrame, v: pd.DataFrame, anchor: str,
 
 
 def target_move(df: pd.DataFrame, *, anchor: str, k: float, e: float,
-                w: int | None = None, min_session_bars: int | None = None) -> pd.Series:
+                w: int | None = None, min_session_bars: int | None = None, **_) -> pd.Series:
     """(k − e) · dev / close — для cost_to_target."""
     _validate(anchor, k, e, w, min_session_bars)
     v = vwap(df, anchor=anchor, w=w)
@@ -137,9 +147,14 @@ def target_move(df: pd.DataFrame, *, anchor: str, k: float, e: float,
 
 
 def signal(df: pd.DataFrame, *, anchor: str, k: float, e: float,
-           w: int | None = None, min_session_bars: int | None = None) -> pd.Series:
+           w: int | None = None, min_session_bars: int | None = None,
+           tf: str | None = None, day_mode: str = "carry") -> pd.Series:
     """Позиция ∈ {−1, 0, 1} на индексе df; на прогреве 0."""
     _validate(anchor, k, e, w, min_session_bars)
+    if day_mode not in DAY_MODES:
+        raise ValueError(f"day_mode ∈ {DAY_MODES}; (C) замороженные уровни — не реализован")
+    if day_mode == "intraday" and tf is None:
+        raise ValueError("для intraday нужен tf")
     v = vwap(df, anchor=anchor, w=w)
     c = df["close"].to_numpy(dtype="float64")
     vw, dev = v["vwap"].to_numpy(), v["dev"].to_numpy()
@@ -150,8 +165,9 @@ def signal(df: pd.DataFrame, *, anchor: str, k: float, e: float,
     near = ok & (np.abs(c - vw0) <= e * dev0)
     gate = _entry_gate(df, v, anchor, min_session_bars)
     # встречный сигнал закрывает всегда; новый вход — только где разрешён
+    ff = last_bar_of_day(df.index, tf) if day_mode == "intraday" else None
     pos = run_state_machine(below & gate, above & gate, near | above, near | below,
-                            frozen=downtime_mask(df))
+                            frozen=downtime_mask(df), force_flat=ff)
     return pd.Series(pos, index=df.index, name="pos")
 
 

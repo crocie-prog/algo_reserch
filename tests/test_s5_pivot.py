@@ -103,7 +103,8 @@ def test_daily_tf_uses_previous_bar():
 
 
 def test_config_params(cfg):
-    assert s5.config_params("1h", cfg) == {"tf": "1h"}
+    assert s5.config_params("1h", cfg) == {"tf": "1h", "day_mode": "intraday"}
+    assert s5.config_params("1d", cfg) == {"tf": "1d", "day_mode": "carry"}
     assert s5.carry_kwargs("1h", cfg, {}) == {"early_bars": 4}
 
 
@@ -131,3 +132,58 @@ def test_real_levels_match_clean_1d_and_truncation():
     assert len(common) > 1000
     assert np.allclose(first.loc[common], p_d.loc[common], rtol=1e-12)
     truncation_check(s5.signal, h1, {"tf": "1h"})
+
+
+# ── режим (B): внутридневной ────────────────────────────────────────────
+
+def test_intraday_closes_at_2300(monkeypatch):
+    df, lv = _path([94, 94, 94], [100, 100, 93], [95, 95, 90], [105, 105, 96],
+                   start="2023-01-02 22:00")
+    monkeypatch.setattr(s5, "daily_levels", lambda d, tf: lv)
+    # 22:00 лонг; 23:00 — принудительное закрытие; 00:00 94 ≥ P=93 — нет входа
+    assert s5.signal(df, tf="1h", day_mode="intraday").tolist() == [1, 0, 0]
+
+
+def test_intraday_no_entry_on_last_bar(monkeypatch):
+    df, lv = _path([94, 94], [100, 100], [95, 95], [105, 105], start="2023-01-02 23:00")
+    monkeypatch.setattr(s5, "daily_levels", lambda d, tf: lv)
+    # 23:00: условие входа есть, но бар последний — позиция не открывается;
+    # 00:00: новый день, вход по обычному правилу
+    assert s5.signal(df, tf="1h", day_mode="intraday").tolist() == [0, 1]
+
+
+def test_intraday_never_carries_synthetic():
+    df = make_bars("2023-01-01", 24 * 60, "1h", seed=30)
+    pos = s5.signal(df, tf="1h", day_mode="intraday")
+    last = pos.index.hour == 23
+    assert (pos[last] == 0).all()
+    st = session_carry_stats(df.index, pos, early_bars=4)
+    assert st["n_carried"] == 0
+    assert (pos != 0).any()                                # стратегия торгует
+
+
+def test_intraday_downtime_on_last_bar_closes_next_working_bar(monkeypatch):
+    df, lv = _path([94, 94, 94, 99], [100] * 4, [95] * 4, [105] * 4, start="2023-01-02 22:00")
+    df["is_downtime"] = [False, True, False, False]       # 23:00 — простой
+    monkeypatch.setattr(s5, "daily_levels", lambda d, tf: lv)
+    # 22:00 лонг; 23:00 простой — держим; 00:00 закрытие (и сразу вход по 94 < 95);
+    # 01:00 99 внутри — держим новую позицию
+    assert s5.signal(df, tf="1h", day_mode="intraday").tolist() == [1, 1, 1, 1]
+
+
+def test_intraday_downtime_pending_close_without_reentry(monkeypatch):
+    df, lv = _path([94, 94, 98], [100] * 3, [95] * 3, [105] * 3, start="2023-01-02 22:00")
+    df["is_downtime"] = [False, True, False]
+    monkeypatch.setattr(s5, "daily_levels", lambda d, tf: lv)
+    assert s5.signal(df, tf="1h", day_mode="intraday").tolist() == [1, 1, 0]
+
+
+@pytest.mark.parametrize("mode", ["frozen_levels", "C", "x"])
+def test_day_mode_validation(mode):
+    with pytest.raises(ValueError):
+        s5.signal(make_bars("2023-01-01", 72, "1h"), tf="1h", day_mode=mode)
+
+
+def test_truncation_intraday():
+    truncation_check(s5.signal, make_bars("2023-01-01", 3000, "1h", seed=26),
+                     {"tf": "1h", "day_mode": "intraday"})
