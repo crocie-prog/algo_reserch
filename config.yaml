@@ -39,6 +39,8 @@ paths:
   data_quality: results/data_quality.csv            # все найденные проблемы
   data_quality_summary: results/data_quality_summary.csv   # сводка по паре×ТФ
   trials_log: results/trials_log.csv   # журнал попыток для DSR, в git
+  stage5_out: results/stage5            # детальные результаты этапа 5 (не в git)
+  stage5_verdicts: docs/stage5_verdicts.md   # вердикты этапа 5 (в git)
 
 periods:
   train_end: "2023-12-31"   # включительно
@@ -99,7 +101,6 @@ stage5:                     # docs/preregistration.md
   oos_min_trades: 30        # меньше сделок OOS у пары — «недостаточно данных»
   permutations: 20          # базовая линия шума (диагностика, не попытка)
   permutation_block: 1D     # перемешиваются целые сутки UTC
-  out_dir: results/stage5
 
 strategies:
   s2:
