@@ -1,4 +1,4 @@
-data/
+/data/
 results/*
 !results/trials_log.csv
 .venv/
