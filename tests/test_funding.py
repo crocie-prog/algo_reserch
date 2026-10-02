@@ -1,14 +1,10 @@
 """Funding: начисление в T — с позиции, удерживаемой до T (бар, заканчивающийся в T);
 на 1d — сумма начислений; положительный funding платят лонги.
-
-Спецификация до реализации; снять skip на этапе 2.
 """
 import pandas as pd
 import pytest
 
 from src.backtest.costs import funding_cost
-
-pytestmark = pytest.mark.skip(reason="реализация funding_cost() — этап 2")
 
 
 def test_hourly_attribution_and_sign():
@@ -50,3 +46,19 @@ def test_daily_sum_of_three():
     # бар open 2023-01-02 покрывает (01-02 00:00, 01-03 00:00]: три начисления
     assert cost.loc["2023-01-02"] == pytest.approx(0.0006)
     assert cost.loc["2023-01-03"] == pytest.approx(0.0004)
+
+
+def test_offgrid_timestamp_goes_to_bar_containing_it():
+    idx = pd.date_range("2023-01-01 00:00", periods=12, freq="1h", tz="UTC")
+    pos = pd.Series(1.0, index=idx)
+    funding = pd.Series([0.0001], index=pd.DatetimeIndex(["2023-01-01 08:00:30"], tz="UTC"))
+    cost = funding_cost(pos, funding, idx, "1h")
+    assert cost.loc["2023-01-01 08:00"] == pytest.approx(0.0001)
+
+
+def test_initial_pos_pays_on_first_bar():
+    idx = pd.date_range("2023-01-01 07:00", periods=3, freq="1h", tz="UTC")
+    pos = pd.Series(0.0, index=idx)
+    funding = pd.Series([0.0001], index=pd.DatetimeIndex(["2023-01-01 08:00"], tz="UTC"))
+    cost = funding_cost(pos, funding, idx, "1h", initial_pos=-1.0)
+    assert cost.loc["2023-01-01 07:00"] == pytest.approx(-0.0001)
