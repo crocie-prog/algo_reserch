@@ -26,25 +26,57 @@ class Fold:
     val_end: pd.Timestamp
 
 
+def _align_up(ts: pd.Timestamp, step_months: int) -> pd.Timestamp:
+    """Ближайшее начало периода (месяцы 1, 1+step, …) не раньше ts, 00:00 UTC."""
+    start = pd.Timestamp(year=ts.year, month=1, day=1, tz=ts.tz)
+    while start < ts:
+        start = start + pd.DateOffset(months=step_months)
+    return start
+
+
 def folds(index: pd.DatetimeIndex, *, scheme: str, step_months: int,
           min_train_months: int, train_end: pd.Timestamp,
+          usable_from: pd.Timestamp | None = None,
           rolling_train_months: int | None = None,
           allow_test: bool = False) -> list[Fold]:
-    """Построить фолды по календарным кварталам.
+    """Построить фолды по календарным периодам (шаг step_months, для квартала — 3).
 
-    Первый фолд начинается, когда накоплено min_train_months данных,
-    отсчитанных от usable_from пары (universe.csv): данные до
-    warmup_only_until — только прогрев индикаторов, не обучение и не оценка.
-    expanding: train_start = usable_from; rolling: train_start =
-    val_start − rolling_train_months.
+    Начало данных — usable_from пары (universe.csv; данные раньше — только
+    прогрев индикаторов), иначе первый бар index. Первая валидация — первое
+    начало периода не раньше начала данных + min_train_months.
+    expanding: train = [начало данных, val_start);
+    rolling: train = [max(начало данных, val_start − rolling_train_months), val_start).
+    Валидация — [val_start, val_start + step_months).
 
-    Без allow_test ни одно окно валидации не выходит за train_end
-    (последнее усекается или отбрасывается).
+    train_end — ИСКЛЮЧИТЕЛЬНАЯ граница train этапа (2024-01-01 для train до
+    2023-12-31): без allow_test ни одно окно валидации её не пересекает; с
+    allow_test фолды продолжаются до конца index.
 
     Raises:
-        ValueError: неизвестная схема, данных меньше min_train_months.
+        ValueError: неизвестная схема, нет rolling_train_months для rolling,
+            данных меньше min_train_months до train_end.
     """
-    raise NotImplementedError
+    if scheme not in ("expanding", "rolling"):
+        raise ValueError(f"неизвестная схема: {scheme}")
+    if scheme == "rolling" and not rolling_train_months:
+        raise ValueError("для rolling нужен rolling_train_months")
+    data_start = index[0] if usable_from is None else max(index[0], usable_from)
+    limit = train_end if not allow_test else index[-1] + pd.Timedelta(microseconds=1)
+    val_start = _align_up(data_start + pd.DateOffset(months=min_train_months), step_months)
+    out: list[Fold] = []
+    while True:
+        val_end = val_start + pd.DateOffset(months=step_months)
+        if val_end > limit and not (allow_test and val_start < limit):
+            break
+        if scheme == "expanding":
+            tr_start = data_start
+        else:
+            tr_start = max(data_start, val_start - pd.DateOffset(months=rolling_train_months))
+        out.append(Fold(tr_start, val_start, val_start, val_end))
+        val_start = val_end
+    if not out:
+        raise ValueError("данных меньше min_train_months до train_end")
+    return out
 
 
 def evaluate_grid(df: pd.DataFrame, strategy, grid: list[dict], mask: pd.Series,
