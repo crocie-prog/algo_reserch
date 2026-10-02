@@ -11,7 +11,10 @@
    торговать, только если train-DSR ≥ train_dsr_min; N_pass = 0 — нет;
 5. ансамбль: среднее sign(pos) по top-k; альтернатива — центр плато
    (argmax train-Sharpe, сглаженного по соседям ±1 шаг по осям сетки среди
-   прошедших фильтры); правило отказа то же.
+   прошедших фильтры); правило отказа то же;
+6. правило «лучшая на train» (предрегистрация H2): sign(pos) конфигурации с
+   наибольшим train-Sharpe среди N_pass; по умолчанию БЕЗ правила отказа по
+   train-DSR (best_requires_dsr=False) — торгуется при N_pass ≥ 1.
 
 Всё, по чему выбираем, считается только на train-окне [train_start, val_start).
 Сигналы — один раз по всей истории (grid.build_grid); окна вырезаются после.
@@ -202,13 +205,15 @@ class WFResult:
     oos_end: pd.Timestamp
     folds_table: pd.DataFrame       # по фолду: отбор и метрики валидации
     scatter: pd.DataFrame           # train- и val-Sharpe всех конфигураций по фолдам
+    bt_best: pd.DataFrame | None = None   # правило «лучшая на train»
 
 
 def walk_forward(gd: GridData, df: pd.DataFrame, funding: pd.Series | None,
                  fold_list: list[Fold], cfg: dict, *, slippage: float,
                  periods_per_year: float,
                  train_from: pd.Timestamp | None = None,
-                 tradable: dict | None = None) -> WFResult:
+                 tradable: dict | None = None,
+                 best_requires_dsr: bool = False) -> WFResult:
     """Отбор по фолдам, сшивка позиций валидации, метрики по кварталам и итогу.
 
     tradable — необязательная карта {val_start: bool} (фильтр торгуемости H2):
@@ -220,6 +225,8 @@ def walk_forward(gd: GridData, df: pd.DataFrame, funding: pd.Series | None,
     n = len(gd.index)
     pe = np.zeros(n)
     pp = np.zeros(n)
+    pb = np.zeros(n)
+    best_traded: list[bool] = []
     sels, scat = [], []
     for f in fold_list:
         s = select_fold(gd, f, cfg, periods_per_year=periods_per_year, train_from=train_from)
@@ -229,6 +236,10 @@ def walk_forward(gd: GridData, df: pd.DataFrame, funding: pd.Series | None,
         if s.trade and liq_ok:
             pe[rows] = np.sign(gd.pos[rows][:, s.topk]).mean(axis=1)
             pp[rows] = np.sign(gd.pos[rows][:, s.plateau])
+        tb = bool(liq_ok and s.best is not None and (s.trade or not best_requires_dsr))
+        best_traded.append(tb)
+        if tb:
+            pb[rows] = np.sign(gd.pos[rows, s.best])
         vs = window_stats(gd, f.val_start, f.val_end, periods_per_year=periods_per_year)
         scat.append(pd.DataFrame({"fold": str(f.val_start.date()), "config": np.arange(len(vs)),
                                   "train_sharpe": s.train_sharpe, "val_sharpe": vs["sharpe"],
@@ -239,12 +250,14 @@ def walk_forward(gd: GridData, df: pd.DataFrame, funding: pd.Series | None,
               active_from=usable_from(cfg, gd.symbol))
     bte = engine.run(df, pd.Series(pe, index=df.index), **kw)
     btp = engine.run(df, pd.Series(pp, index=df.index), **kw)
+    btb = engine.run(df, pd.Series(pb, index=df.index), **kw)
     rows_out = []
-    for s in sels:
+    for s, tb in zip(sels, best_traded):
         f = s.fold
         mask = (df.index >= f.val_start) & (df.index < f.val_end)
         me = metrics(bte, periods_per_year=periods_per_year, mask=mask)
         mp = metrics(btp, periods_per_year=periods_per_year, mask=mask)
+        mb = metrics(btb, periods_per_year=periods_per_year, mask=mask)
         rows_out.append({
             "symbol": gd.symbol, "strategy": gd.strategy, "tf": gd.tf,
             "val_start": f.val_start, "val_end": f.val_end, "train_start": s.train_start,
@@ -255,10 +268,14 @@ def walk_forward(gd: GridData, df: pd.DataFrame, funding: pd.Series | None,
             "liquidity_ok": True if tradable is None else bool(tradable.get(f.val_start, False)),
             "topk_params": [gd.grid_params[i] for i in s.topk],
             "plateau_params": gd.grid_params[s.plateau] if s.plateau is not None else None,
+            "best_params": gd.grid_params[s.best] if s.best is not None else None,
+            "trade_best": tb,
             **{f"ens_{k}": v for k, v in me.items()},
             **{f"plt_{k}": v for k, v in mp.items()},
+            **{f"best_{k}": v for k, v in mb.items()},
         })
     return WFResult(sels, bte, btp, fold_list[0].val_start, fold_list[-1].val_end,
                     pd.DataFrame(rows_out),
                     pd.concat(scat, ignore_index=True).assign(symbol=gd.symbol,
-                                                              strategy=gd.strategy, tf=gd.tf))
+                                                              strategy=gd.strategy, tf=gd.tf),
+                    btb)

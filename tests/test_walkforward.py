@@ -126,3 +126,27 @@ def test_stitch_boundary_fee(cfg):
                        periods_per_year=8760)
     bt = res.bt_ensemble
     assert np.allclose(bt["fee"], 0.001 * bt["pos"].diff().abs().fillna(bt["pos"].abs()))
+
+
+def test_best_on_train_rule(cfg0):
+    cfg0["selection"]["train_dsr_min"] = 0.999          # ансамбль отказывает почти всегда
+    df = random_walk(11)
+    gd = _grid(df, cfg0)
+    fl = _folds(df)
+    res = walk_forward(gd, df, None, fl, cfg0, slippage=0.0, periods_per_year=8760)
+    pos = res.bt_best["pos"]
+    for s in res.selections:
+        m = (pos.index >= s.fold.val_start) & (pos.index < s.fold.val_end)
+        assert s.best == int(np.nanargmax(np.where(s.passed, s.train_sharpe, -np.inf)))
+        # без правила отказа: торгуем всегда при N_pass ≥ 1, даже если train-DSR < 0.5
+        assert np.array_equal(pos[m].to_numpy(), np.sign(gd.pos[m, s.best]))
+    assert res.folds_table["trade_best"].all()
+    assert (~res.folds_table["trade"]).all()           # ансамбль отказал, «лучшая» — торгует
+    # с требованием DSR правило «лучшая» совпадает по торговле с ансамблем
+    r2 = walk_forward(gd, df, None, fl, cfg0, slippage=0.0, periods_per_year=8760,
+                      best_requires_dsr=True)
+    assert (r2.folds_table["trade_best"] == r2.folds_table["trade"]).all()
+    # фильтр торгуемости закрывает и правило «лучшая»
+    blk = {f.val_start: False for f in fl}
+    r3 = walk_forward(gd, df, None, fl, cfg0, slippage=0.0, periods_per_year=8760, tradable=blk)
+    assert (r3.bt_best["pos"] == 0).all() and not r3.folds_table["trade_best"].any()
