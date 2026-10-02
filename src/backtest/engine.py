@@ -84,7 +84,8 @@ def run(df: pd.DataFrame, pos: pd.Series, *, fee_per_side: float,
     out = pd.DataFrame({"pos": pos, "held": held, "ret": ret, "gross": gross,
                         "turnover": to, "fee": fee, "slippage": slip,
                         "funding": fund, "net": net}, index=df.index)
-    out["equity"] = np.cumprod(1.0 + out["net"].to_numpy())
+    with np.errstate(over="ignore"):         # абсурдные ряды (утечка) → inf, не ошибка
+        out["equity"] = np.cumprod(1.0 + out["net"].to_numpy())
     return out
 
 

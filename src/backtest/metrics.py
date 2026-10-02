@@ -78,11 +78,25 @@ def max_drawdown(equity: np.ndarray) -> float:
     return float((e / peak - 1.0).min())
 
 
+def _log_equity(net: np.ndarray) -> np.ndarray | None:
+    """log equity окна; None — капитал обнулён (net ≤ −1)."""
+    if (net <= -1.0).any():
+        return None
+    return np.cumsum(np.log1p(net))
+
+
+def _mdd_log(loge: np.ndarray) -> float:
+    """MDD по log equity: устойчиво к переполнению на длинных рядах."""
+    le = np.r_[0.0, loge]
+    return float(np.expm1((le - np.maximum.accumulate(le)).min()))
+
+
 def metrics(bt: pd.DataFrame, *, periods_per_year: float,
             mask: pd.Series | np.ndarray | None = None) -> dict[str, float]:
     """Метрики по результату engine.run (опционально на непрерывном окне mask).
 
-    - ann_return: CAGR по equity окна (старт с 1): eq_end^(P/n) − 1;
+    - ann_return: CAGR по equity окна (старт с 1): eq_end^(P/n) − 1
+      (в логарифмах — без переполнения на длинных рядах);
     - ann_vol: std(net) · √P (ddof=1);
     - sharpe: mean(net) / std(net) · √P;
     - mdd: максимальная просадка equity окна;
@@ -98,15 +112,15 @@ def metrics(bt: pd.DataFrame, *, periods_per_year: float,
         raise ValueError("пустое окно")
     p = float(periods_per_year)
     net = w["net"].to_numpy()
-    eq = np.cumprod(1.0 + net)
+    loge = _log_equity(net)
     years = n / p
     sd = net.std(ddof=1) if n > 1 else np.nan
     tr = trades(w)
     return {
-        "ann_return": float(eq[-1] ** (1.0 / years) - 1.0) if eq[-1] > 0 else -1.0,
+        "ann_return": float(np.expm1(loge[-1] / years)) if loge is not None else -1.0,
         "ann_vol": float(sd * np.sqrt(p)),
         "sharpe": float(net.mean() / sd * np.sqrt(p)) if sd and sd > 0 else np.nan,
-        "mdd": max_drawdown(eq),
+        "mdd": _mdd_log(loge) if loge is not None else -1.0,
         "exposure": float((w["held"] != 0).mean()),
         "win_rate": float((tr["pnl"] > 0).mean()) if len(tr) else np.nan,
         "trades_per_year": len(tr) / years,

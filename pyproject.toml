@@ -2,4 +2,7 @@
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-m 'not network'"
-markers = ["network: обращается к реальному API Bybit; запуск вручную: pytest -m network"]
+markers = [
+    "network: обращается к реальному API Bybit; запуск вручную: pytest -m network",
+    "data: использует data/clean; пропускается, если данных нет",
+]
