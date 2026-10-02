@@ -160,3 +160,43 @@ def position_stats(pos: pd.Series, *, periods_per_year: float) -> dict[str, floa
         "n_trades": n_tr,
         "n_bars": n,
     }
+
+
+def session_carry_stats(index: pd.DatetimeIndex, pos: pd.Series, *, early_bars: int,
+                        is_downtime: np.ndarray | None = None) -> dict[str, float]:
+    """Описательно, без доходности: перенос сделок через 00:00 UTC.
+
+    Номер бара в сессии — счёт рабочих баров (не простоя) в сутках UTC
+    по времени открытия.
+    - carried_share: доля сделок (отрезков постоянного ненулевого знака),
+      удерживаемых через границу суток: позиция, решённая на close бара i,
+      держится до close бара закрытия x (первый бар со сменой знака) —
+      перенос, если x в других сутках, чем i;
+    - carried_closed_early_share: среди перенесённых и закрытых — доля
+      закрытых в первые early_bars рабочих бара новых суток (бар закрытия —
+      первый бар со сменой знака позиции);
+    - n_carried.
+    """
+    s = np.sign(pos.to_numpy(dtype="float64"))
+    day = np.asarray(index.floor("1D"))
+    work = np.ones(len(s), bool) if is_downtime is None else ~np.asarray(is_downtime, bool)
+    sb = pd.Series(work.astype(int), index=index).groupby(index.floor("1D")).cumsum().to_numpy()
+    n = len(s)
+    starts = np.flatnonzero((s != 0) & (np.r_[0.0, s[:-1]] != s))
+    carried = closed_early = carried_closed = 0
+    for i in starts:
+        j = i
+        while j + 1 < n and s[j + 1] == s[i]:
+            j += 1
+        closed = j + 1 < n
+        x = j + 1 if closed else j                  # бар закрытия (или последний бар ряда)
+        if day[x] != day[i]:                        # удерживалась через 00:00
+            carried += 1
+            if closed:
+                carried_closed += 1
+                if work[x] and sb[x] <= early_bars:
+                    closed_early += 1
+    nt = len(starts)
+    return {"carried_share": carried / nt if nt else np.nan,
+            "carried_closed_early_share": closed_early / carried_closed if carried_closed else np.nan,
+            "n_carried": carried}

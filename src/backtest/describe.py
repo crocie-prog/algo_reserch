@@ -32,7 +32,7 @@ import sys
 
 import pandas as pd
 
-from src.backtest.metrics import position_stats
+from src.backtest.metrics import position_stats, session_carry_stats
 from src.config import load_config, periods_per_year, tf_delta
 from src.data.load import load
 from src.data.universe import usable_from
@@ -46,8 +46,9 @@ def describe(strategy: str, params_list: list[dict], *, tf: str, cfg: dict,
     Параметры, не входящие в сетку (config_params стратегии, например якорь
     и прогрев сессии S6), подставляются из config. from_date — начало окна
     не раньше этой даты (например, 2022-01-01 для S6); окно = max(usable_from,
-    from_date). Для сессионной S6 добавляются доли сделок, перенесённых
-    через 00:00 UTC, и среди них — закрытых в первые min_session_bars баров.
+    from_date). Для стратегий с границей дня (carry_kwargs: S6 session, S5)
+    добавляются доли сделок, перенесённых через 00:00 UTC, и среди них —
+    закрытых в первые N рабочих баров новых суток.
     """
     mod = importlib.import_module(f"src.strategies.{strategy}")
     rows = []
@@ -72,9 +73,11 @@ def describe(strategy: str, params_list: list[dict], *, tf: str, cfg: dict,
             st = position_stats(pos, periods_per_year=periods_per_year(tf, cfg))
             hours = tf_delta(tf) / pd.Timedelta(hours=1)
             extra = {}
-            if hasattr(mod, "session_carry_stats") and params.get("anchor") == "session":
-                extra = mod.session_carry_stats(df.loc[pos.index], pos,
-                                                min_session_bars=params["min_session_bars"])
+            ck = mod.carry_kwargs(tf, cfg, params) if hasattr(mod, "carry_kwargs") else None
+            if ck is not None:
+                d_win = df.loc[pos.index]
+                down = d_win["is_downtime"].to_numpy(bool) if "is_downtime" in d_win else None
+                extra = session_carry_stats(pos.index, pos, is_downtime=down, **ck)
             rows.append({"symbol": symbol, "tf": tf, "params": json.dumps(params),
                          "from": pos.index[0], "to": pos.index[-1],
                          "trades_per_year": st["trades_per_year"],

@@ -155,34 +155,16 @@ def signal(df: pd.DataFrame, *, anchor: str, k: float, e: float,
     return pd.Series(pos, index=df.index, name="pos")
 
 
+def carry_kwargs(tf: str, cfg: dict, params: dict) -> dict | None:
+    """Для описательной статистики переноса через 00:00: только якорь session."""
+    if params.get("anchor") != "session":
+        return None
+    return {"early_bars": int(params["min_session_bars"])}
+
+
 def session_carry_stats(df: pd.DataFrame, pos: pd.Series, *,
                         min_session_bars: int) -> dict[str, float]:
-    """Описательно, без доходности: перенос сделок через 00:00 UTC.
-
-    - carried_share: доля сделок (отрезков постоянного ненулевого знака),
-      удерживаемых через границу сессии;
-    - carried_closed_early_share: среди перенесённых и закрытых — доля
-      закрытых в первые min_session_bars рабочих бара новой сессии (бар
-      закрытия — первый бар со сменой знака позиции).
-    """
-    s = np.sign(pos.to_numpy(dtype="float64"))
-    day = np.asarray(df.index.floor("1D"))
-    sb = vwap(df, anchor="session")["session_bar"].to_numpy()
-    n = len(s)
-    starts = np.flatnonzero((s != 0) & (np.r_[0.0, s[:-1]] != s))
-    carried = closed_early = carried_closed = 0
-    for i in starts:
-        j = i
-        while j + 1 < n and s[j + 1] == s[i]:
-            j += 1
-        if day[j] != day[i]:
-            carried += 1
-            if j + 1 < n:                               # сделка закрыта внутри ряда
-                carried_closed += 1
-                x = j + 1
-                if day[x] != day[i] and not np.isnan(sb[x]) and sb[x] <= min_session_bars:
-                    closed_early += 1
-    nt = len(starts)
-    return {"carried_share": carried / nt if nt else np.nan,
-            "carried_closed_early_share": closed_early / carried_closed if carried_closed else np.nan,
-            "n_carried": carried}
+    """Перенос сделок через 00:00 UTC (описательно): metrics.session_carry_stats
+    с early_bars = min_session_bars."""
+    from src.backtest.metrics import session_carry_stats as _scs
+    return _scs(df.index, pos, early_bars=min_session_bars, is_downtime=downtime_mask(df))
