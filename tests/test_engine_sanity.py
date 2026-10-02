@@ -27,7 +27,13 @@ def random_walk(n=200_000, sigma=0.01, seed=42):
     return pd.DataFrame({"close": close}, index=idx)
 
 
-def random_positions(index, p_switch=0.05, seed=7):
+P_SWITCH = 0.05
+# E|Δpos| при смене: новая позиция равновероятна из {−1, 0, 1} независимо от старой
+E_ABS_DELTA = 8 / 9
+EXPECTED_FEE_PER_BAR = FEE * P_SWITCH * E_ABS_DELTA
+
+
+def random_positions(index, p_switch=P_SWITCH, seed=7):
     """Марковские случайные позиции {−1, 0, 1}, независимые от цен."""
     rng = np.random.default_rng(seed)
     n = len(index)
@@ -66,7 +72,8 @@ def stat_random(df, funding=None, tf="1h", fee=FEE):
     m = metrics(bt, periods_per_year=P_1H)
     return {"n": n, "mean_gross": g.mean(), "se_gross": se, "t_gross": g.mean() / se,
             "mean_net": bt["net"].mean(), "mean_cost": cost.mean(),
-            "net_plus_cost_over_se": (bt["net"].mean() + cost.mean()) / se,
+            "expected_fee": EXPECTED_FEE_PER_BAR,
+            "net_vs_expected_fee_over_se": (bt["net"].mean() + EXPECTED_FEE_PER_BAR) / se,
             "sharpe_net": m["sharpe"], "turnover_per_year": m["turnover_per_year"]}
 
 
@@ -102,7 +109,9 @@ def test_buy_hold_matches_price_real():
 def test_random_signal_costs_synthetic():
     r = stat_random(random_walk())
     assert abs(r["t_gross"]) < 4                       # валовой результат ≈ 0
-    assert abs(r["net_plus_cost_over_se"]) < 4         # net ≈ −издержки
+    # издержки совпадают с теорией: fee · p_switch · E|Δpos|
+    assert r["mean_cost"] == pytest.approx(EXPECTED_FEE_PER_BAR, rel=0.03)
+    assert abs(r["net_vs_expected_fee_over_se"]) < 4   # net ≈ −теоретические издержки
     assert r["mean_net"] < 0
 
 
@@ -112,9 +121,8 @@ def test_random_signal_costs_real():
     if df is None:
         pytest.skip("нет clean BTCUSDT 1h")
     r = stat_random(df, funding=f)
-    assert abs(r["t_gross"]) < 4
-    assert abs(r["net_plus_cost_over_se"]) < 4
-    assert r["mean_net"] < 0
+    assert abs(r["t_gross"]) < 4                       # валовой результат ≈ 0
+    assert r["mean_net"] < 0                           # остаются издержки (комиссия + funding)
 
 
 # ── 3. сдвиг на −1 бар ловится ───────────────────────────────────────────
