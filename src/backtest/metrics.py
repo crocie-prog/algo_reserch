@@ -130,3 +130,33 @@ def metrics(bt: pd.DataFrame, *, periods_per_year: float,
         "n_trades": len(tr),
         "total_cost": float((w["fee"] + w["slippage"] + w["funding"]).sum()),
     }
+
+
+def position_stats(pos: pd.Series, *, periods_per_year: float) -> dict[str, float]:
+    """Описательные величины ряда позиций — без доходности (этап 3).
+
+    Сделка — отрезок постоянного ненулевого знака позиции (решения на close).
+    - trades_per_year: число входов (из флэта или переворотом) в год;
+    - exposure: доля баров с ненулевой позицией;
+    - mean_duration_bars: средняя длительность сделки в барах
+      (последняя сделка, открытая на конце ряда, учитывается как есть);
+    - reversal_share: доля входов, сделанных переворотом (знак сменился
+      без промежуточного флэта).
+    """
+    s = np.sign(pos.to_numpy(dtype="float64"))
+    n = len(s)
+    if n == 0:
+        raise ValueError("пустой ряд")
+    prev = np.r_[0.0, s[:-1]]
+    entries = (s != 0) & (s != prev)
+    reversals = entries & (prev != 0)
+    n_tr = int(entries.sum())
+    years = n / float(periods_per_year)
+    return {
+        "trades_per_year": n_tr / years,
+        "exposure": float((s != 0).mean()),
+        "mean_duration_bars": float((s != 0).sum() / n_tr) if n_tr else np.nan,
+        "reversal_share": float(reversals.sum() / n_tr) if n_tr else np.nan,
+        "n_trades": n_tr,
+        "n_bars": n,
+    }
