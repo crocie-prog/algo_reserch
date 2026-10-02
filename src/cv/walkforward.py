@@ -1,19 +1,37 @@
-"""Walk-forward подхода A: фолды, ранжирование сетки, топ-k, ансамбль, порог.
+"""Walk-forward подхода A (docs/preregistration.md §4, §6, §8).
 
-Параметры — config.yaml (walk_forward, selection). Шаг — квартал,
-минимальное обучающее окно — 12 месяцев. Схемы: expanding и rolling.
+Для каждого фолда, стратегии и пары отдельно:
+1. фильтры на train-окне: cost_ratio ≤ selection.cost_ratio_max,
+   trades_per_year ≥ min_trades_per_year[tf], Sharpe определён → N_pass;
+2. ранжирование по годовому train-Sharpe чистой доходности;
+3. top-k = min(top_k_max, ⌈N_pass / top_k_div⌉);
+4. уровень 1 DSR: N_eff — число собственных значений на neff_share следа
+   корреляции train-доходностей N_pass конфигураций; V — дисперсия их
+   Sharpe на бар; SR₀ = E[max]; train-DSR = PSR(SR₀) лучшей;
+   торговать, только если train-DSR ≥ train_dsr_min; N_pass = 0 — нет;
+5. ансамбль: среднее sign(pos) по top-k; альтернатива — центр плато
+   (argmax train-Sharpe, сглаженного по соседям ±1 шаг по осям сетки среди
+   прошедших фильтры); правило отказа то же.
 
-Весь подбор — только на train (до periods.train_end). Тестовое окно позже
-train_end фолды без allow_test=True не создают.
-
-Каждый прогон сетки пишется в журнал попыток (src.stats.trials) — для DSR.
+Всё, по чему выбираем, считается только на train-окне [train_start, val_start).
+Сигналы — один раз по всей истории (grid.build_grid); окна вырезаются после.
+Позиции кварталов валидации сшиваются в один ряд на пару и прогоняются
+движком целиком: смена ансамбля на стыке облагается комиссией, позиция на
+первом баре квартала — решение с close последнего бара предыдущего.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable
+import math
+from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
+
+from src.backtest import engine
+from src.backtest.metrics import metrics
+from src.cv.grid import GridData, window_rows, window_stats
+from src.stats.dsr import expected_max_sharpe, moments, psr
+from src.stats.neff import corr_of_columns, effective_number, participation_ratio
 
 
 @dataclass(frozen=True)
@@ -79,53 +97,146 @@ def folds(index: pd.DatetimeIndex, *, scheme: str, step_months: int,
     return out
 
 
-def evaluate_grid(df: pd.DataFrame, strategy, grid: list[dict], mask: pd.Series,
-                  *, fee_per_side: float, funding: pd.Series | None,
-                  tf: str, periods_per_year: float) -> pd.DataFrame:
-    """Прогнать сетку на всей истории df, метрики считать на mask.
+@dataclass
+class FoldSelection:
+    """Решение по одному фолду."""
 
-    Индикаторы каузальные, поэтому считаются на всей доступной истории;
-    состояние позиции переносится через границы окон.
+    fold: Fold
+    train_start: pd.Timestamp       # с учётом train_from варианта
+    n_grid: int
+    n_excl_cost: int
+    n_excl_trades: int
+    n_pass: int
+    k: int
+    topk: list[int]
+    plateau: int | None
+    best: int | None
+    best_sharpe: float
+    n_eff: int
+    pr: float
+    sr0_bar: float
+    train_dsr: float
+    trade: bool
+    train_sharpe: np.ndarray = field(repr=False)   # годовой, по всем конфигурациям
+    passed: np.ndarray = field(repr=False)
 
-    Returns:
-        По строке на набор параметров: params, sharpe, n_trades,
-        trades_per_year, exposure, ann_return, mdd.
-    """
-    raise NotImplementedError
+
+def _plateau(coords: np.ndarray, sharpe: np.ndarray, passed: np.ndarray) -> int | None:
+    """argmax train-Sharpe, сглаженного по соседям (Чебышёв ≤ 1) среди прошедших."""
+    idx = np.flatnonzero(passed)
+    if len(idx) == 0:
+        return None
+    if coords.shape[1] == 0:
+        return int(idx[np.argmax(sharpe[idx])])
+    best, best_val = None, -np.inf
+    for j in idx:
+        nb = idx[np.abs(coords[idx] - coords[j]).max(axis=1) <= 1]
+        v = float(np.mean(sharpe[nb]))
+        if v > best_val:
+            best, best_val = int(j), v
+    return best
 
 
-def select_topk(scores: pd.DataFrame, *, k: int, min_train_sharpe: float,
-                min_trades_per_year: float) -> list[dict]:
-    """Топ-k по Sharpe среди наборов с trades_per_year ≥ min_trades_per_year.
-
-    Если лучший Sharpe < min_train_sharpe или проходящих нет — пустой
-    список: в этом окне стратегия не торгует.
-    """
-    raise NotImplementedError
-
-
-def ensemble(df: pd.DataFrame, strategy, params_list: list[dict]) -> pd.Series:
-    """Позиция ансамбля: mean_k sign(pos_k) ∈ [−1, 1]; пустой список → 0."""
-    raise NotImplementedError
+def select_fold(gd: GridData, fold: Fold, cfg: dict, *, periods_per_year: float,
+                train_from: pd.Timestamp | None = None) -> FoldSelection:
+    """Отбор конфигураций на train-окне фолда (только данные до val_start)."""
+    sel = cfg["selection"]
+    t0 = fold.train_start if train_from is None else max(fold.train_start, train_from)
+    st = window_stats(gd, t0, fold.train_end, periods_per_year=periods_per_year)
+    sh = st["sharpe"].to_numpy()
+    cr = st["cost_ratio"].to_numpy()
+    tpy = st["trades_per_year"].to_numpy()
+    ok_cost = ~(cr > sel["cost_ratio_max"])                 # NaN (нет показателя) — проходит
+    ok_trades = tpy >= sel["min_trades_per_year"][gd.tf]
+    passed = ok_cost & ok_trades & ~np.isnan(sh)
+    n_pass = int(passed.sum())
+    idx = np.flatnonzero(passed)
+    k = min(int(sel["top_k_max"]), math.ceil(n_pass / sel["top_k_div"])) if n_pass else 0
+    order = idx[np.argsort(-sh[idx], kind="stable")]
+    topk = [int(i) for i in order[:k]]
+    best = topk[0] if topk else None
+    n_eff, pr, sr0, tdsr = 0, np.nan, np.nan, np.nan
+    if n_pass:
+        rows = window_rows(gd.index, t0, fold.train_end)
+        x = gd.net[rows][:, idx]
+        if n_pass > 1:
+            c = corr_of_columns(x)
+            n_eff = effective_number(c, sel["neff_share"])
+            pr = participation_ratio(c)
+            v = float(np.var(st["sr_bar"].to_numpy()[idx], ddof=1))
+        else:
+            n_eff, pr, v = 1, 1.0, 0.0
+        sr0 = expected_max_sharpe(n_eff, v)
+        sr_b, sk, ku, t = moments(gd.net[rows][:, best])
+        tdsr = psr(sr_b, sr0, n_obs=t, skew=sk, kurt=ku)
+    trade = bool(n_pass > 0 and not np.isnan(tdsr) and tdsr >= sel["train_dsr_min"])
+    return FoldSelection(fold, t0, len(sh), int((~ok_cost).sum()),
+                         int((ok_cost & ~ok_trades).sum()), n_pass, k, topk,
+                         _plateau(gd.coords, sh, passed), best,
+                         float(sh[best]) if best is not None else np.nan,
+                         n_eff, pr, sr0, tdsr, trade, sh, passed)
 
 
 @dataclass
 class WFResult:
-    """Позиции по окнам валидации, склеенные в один ряд, и журнал отбора по фолдам."""
+    """Итог walk-forward одной стратегии на одной паре."""
 
-    pos: pd.Series
-    selection: pd.DataFrame
+    selections: list[FoldSelection]
+    bt_ensemble: pd.DataFrame       # движок по сшитому ряду (вся история)
+    bt_plateau: pd.DataFrame
+    oos_start: pd.Timestamp
+    oos_end: pd.Timestamp
+    folds_table: pd.DataFrame       # по фолду: отбор и метрики валидации
+    scatter: pd.DataFrame           # train- и val-Sharpe всех конфигураций по фолдам
 
 
-def walk_forward(df: pd.DataFrame, strategy, grid: list[dict], fold_list: list[Fold],
-                 cfg: dict, *, tf: str, funding: pd.Series | None = None,
-                 log_trial: Callable | None = None) -> WFResult:
-    """Для каждого фолда: evaluate_grid на train → select_topk → ensemble на val.
+def walk_forward(gd: GridData, df: pd.DataFrame, funding: pd.Series | None,
+                 fold_list: list[Fold], cfg: dict, *, slippage: float,
+                 periods_per_year: float,
+                 train_from: pd.Timestamp | None = None) -> WFResult:
+    """Отбор по фолдам, сшивка позиций валидации, метрики по кварталам и итогу."""
+    from src.data.universe import usable_from
 
-    Сигналы считаются по всей доступной истории df (до границы, разрешённой
-    load), окна train/val вырезаются после — не пересчётом с начала окна.
-    Для рекурсивных стратегий (ATR Уайлдера, Supertrend) пересчёт с начала
-    окна меняет позиции (зависимость от начала ряда, не look-ahead); правило
-    CLAUDE.md, «Подход A».
-    """
-    raise NotImplementedError
+    n = len(gd.index)
+    pe = np.zeros(n)
+    pp = np.zeros(n)
+    sels, scat = [], []
+    for f in fold_list:
+        s = select_fold(gd, f, cfg, periods_per_year=periods_per_year, train_from=train_from)
+        sels.append(s)
+        rows = window_rows(gd.index, f.val_start, f.val_end)
+        if s.trade:
+            pe[rows] = np.sign(gd.pos[rows][:, s.topk]).mean(axis=1)
+            pp[rows] = np.sign(gd.pos[rows][:, s.plateau])
+        vs = window_stats(gd, f.val_start, f.val_end, periods_per_year=periods_per_year)
+        scat.append(pd.DataFrame({"fold": str(f.val_start.date()), "config": np.arange(len(vs)),
+                                  "train_sharpe": s.train_sharpe, "val_sharpe": vs["sharpe"],
+                                  "passed": s.passed}))
+    c = cfg["costs"]
+    kw = dict(fee_per_side=float(c["fee_per_side"]), slippage_per_side=slippage,
+              funding=funding if c.get("include_funding", True) else None, tf=gd.tf,
+              active_from=usable_from(cfg, gd.symbol))
+    bte = engine.run(df, pd.Series(pe, index=df.index), **kw)
+    btp = engine.run(df, pd.Series(pp, index=df.index), **kw)
+    rows_out = []
+    for s in sels:
+        f = s.fold
+        mask = (df.index >= f.val_start) & (df.index < f.val_end)
+        me = metrics(bte, periods_per_year=periods_per_year, mask=mask)
+        mp = metrics(btp, periods_per_year=periods_per_year, mask=mask)
+        rows_out.append({
+            "symbol": gd.symbol, "strategy": gd.strategy, "tf": gd.tf,
+            "val_start": f.val_start, "val_end": f.val_end, "train_start": s.train_start,
+            "n_grid": s.n_grid, "n_excl_cost": s.n_excl_cost, "n_excl_trades": s.n_excl_trades,
+            "n_pass": s.n_pass, "k": s.k, "n_eff": s.n_eff, "pr": s.pr,
+            "best_train_sharpe": s.best_sharpe, "sr0_bar": s.sr0_bar, "train_dsr": s.train_dsr,
+            "trade": s.trade,
+            "topk_params": [gd.grid_params[i] for i in s.topk],
+            "plateau_params": gd.grid_params[s.plateau] if s.plateau is not None else None,
+            **{f"ens_{k}": v for k, v in me.items()},
+            **{f"plt_{k}": v for k, v in mp.items()},
+        })
+    return WFResult(sels, bte, btp, fold_list[0].val_start, fold_list[-1].val_end,
+                    pd.DataFrame(rows_out),
+                    pd.concat(scat, ignore_index=True).assign(symbol=gd.symbol,
+                                                              strategy=gd.strategy, tf=gd.tf))
