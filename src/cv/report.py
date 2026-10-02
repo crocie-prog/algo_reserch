@@ -2,8 +2,9 @@
 
 Уровень 2 (§8): попытки — EW-OOS ряды 1h, slippage 0, по вариантам
 {expanding, rolling} × {ансамбль, центр плато} (+ S6 с 2022); N_eff — число
-собственных значений на neff_share следа их корреляции (общие бары), V —
-дисперсия их Sharpe на бар, SR₀ = E[max]. DSR основного варианта стратегии
+собственных значений на neff_share следа корреляции торговавших (общие бары)
+плюс один кластер на все попытки с нулевым рядом; V — дисперсия Sharpe на бар
+торговавших; SR₀ = E[max]. DSR основного варианта стратегии
 (expanding, ансамбль, slippage 0) = PSR(SR₀).
 
 Вердикт по стратегии (1h, основной вариант):
@@ -51,22 +52,47 @@ def level2(cfg: dict) -> dict:
     """N_eff, V, SR₀ уровня 2 по всем попыткам (1h, slippage 0)."""
     from src.cv.stage5 import STRATEGIES, rules_for
     root, tf = _root(cfg), cfg["stage5"]["tfs"][0]
-    series = {}
+    series: dict[str, pd.Series] = {}
+    idle: list[str] = []
     for scheme in cfg["stage5"]["schemes"]:
         for s6 in (False, True):
             vid = _vid(tf, scheme, 0.0, s6)
             for strategy in (["s6_vwap"] if s6 else STRATEGIES):
                 for rule in rules_for(strategy):
                     s = _ew(root, vid, strategy, rule)
-                    if s is not None and s.std() > 0:
-                        series[f"{vid}|{strategy}|{rule}"] = s
-    mat = pd.concat(series, axis=1, join="inner", sort=True)
-    c = corr_of_columns(mat.to_numpy())
-    sr_bar = mat.mean() / mat.std(ddof=1)
-    n_eff = effective_number(c, cfg["selection"]["neff_share"])
-    v = float(sr_bar.var(ddof=1)) if len(sr_bar) > 1 else 0.0
-    return {"n_attempts": len(series), "n_eff": n_eff, "pr": participation_ratio(c),
-            "var_sr_bar": v, "sr0_bar": expected_max_sharpe(n_eff, v), "n_obs": len(mat)}
+                    if s is None:
+                        continue
+                    key = f"{vid}|{strategy}|{rule}"
+                    if s.std() > 0:
+                        series[key] = s
+                    else:
+                        idle.append(key)
+    return level2_from_series(series, idle, cfg["selection"]["neff_share"])
+
+
+def level2_from_series(series: dict[str, pd.Series], idle: list[str], share: float) -> dict:
+    """N_eff, V, SR₀ уровня 2.
+
+    Правило (запись «Изменения» 2026-10-02 (б)): попытки с нулевым OOS-рядом
+    (стратегия не торговала) не исключаются из N, а считаются одним кластером:
+    N_eff = N_eff(торговавших) + 1, если такие есть. V — дисперсия Sharpe
+    на бар только торговавших (у нулевого ряда Sharpe не определён).
+    """
+    if series:
+        mat = pd.concat(series, axis=1, join="inner", sort=True)
+        c = corr_of_columns(mat.to_numpy())
+        sr_bar = mat.mean() / mat.std(ddof=1)
+        n_eff_tr = effective_number(c, share)
+        pr = participation_ratio(c)
+        v = float(sr_bar.var(ddof=1)) if len(sr_bar) > 1 else 0.0
+        n_obs = len(mat)
+    else:
+        n_eff_tr, pr, v, n_obs = 0, np.nan, 0.0, 0
+    n_eff = n_eff_tr + (1 if idle else 0)
+    return {"n_attempts": len(series) + len(idle), "n_traded": len(series), "n_idle": len(idle),
+            "traded": list(series), "idle": list(idle), "n_eff_traded": n_eff_tr,
+            "n_eff": n_eff, "pr": pr, "var_sr_bar": v,
+            "sr0_bar": expected_max_sharpe(n_eff, v), "n_obs": n_obs}
 
 
 def _noise(root: Path) -> pd.DataFrame | None:
@@ -156,7 +182,8 @@ def verdicts(cfg: dict) -> Path:
          f"Дата: {pd.Timestamp.now(tz='UTC'):%Y-%m-%d}, git {git_hash()}. Train до 2023-12-31; "
          "test не открывался.", "",
          "## Уровень 2 (DSR)", "",
-         f"Попыток: {l2['n_attempts']}; N_eff (95% следа): {l2['n_eff']}; participation ratio: "
+         f"Попыток: {l2['n_attempts']} (торговали {l2['n_traded']}, нулевой OOS-ряд {l2['n_idle']} — "
+         f"один кластер); N_eff (95% следа): {l2['n_eff']}; participation ratio торговавших: "
          f"{l2['pr']:.1f}; V(SR на бар): {l2['var_sr_bar']:.3e}; SR₀ на бар: {l2['sr0_bar']:.3e}; "
          f"общих баров: {l2['n_obs']}.", ""]
     for tf, tab in allv.groupby("tf", sort=False):

@@ -66,3 +66,17 @@ def test_end_to_end(cfg5):
     v = pd.read_csv(root / "verdicts.csv")
     assert set(v["verdict"]) <= {"Значимо", "Кандидат", "Нет", "недостаточно данных"}
     assert str(path).startswith(str(cfg5["paths"]["stage5_verdicts"].parent))
+
+
+def test_level2_idle_attempts_form_one_cluster():
+    rng = np.random.default_rng(0)
+    idx = pd.date_range("2022-01-01", periods=2000, freq="1h", tz="UTC")
+    series = {f"a{i}": pd.Series(rng.normal(0, 0.01, 2000), index=idx) for i in range(3)}
+    base = report.level2_from_series(series, [], 0.95)
+    with_idle = report.level2_from_series(series, ["z1", "z2", "z3"], 0.95)
+    assert with_idle["n_eff"] == base["n_eff"] + 1
+    assert with_idle["n_attempts"] == 6 and with_idle["n_idle"] == 3
+    assert with_idle["var_sr_bar"] == pytest.approx(base["var_sr_bar"])
+    assert with_idle["sr0_bar"] > base["sr0_bar"]
+    only_idle = report.level2_from_series({}, ["z"], 0.95)
+    assert only_idle["n_eff"] == 1 and only_idle["sr0_bar"] == 0.0
