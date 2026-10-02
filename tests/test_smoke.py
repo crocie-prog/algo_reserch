@@ -20,6 +20,7 @@ MODULES = [
     "src.portfolio.weights", "src.portfolio.aggregate",
     "src.stats.sharpe", "src.stats.lw", "src.stats.bootstrap",
     "src.stats.dsr", "src.stats.ce", "src.stats.trials", "src.stats.neff",
+    "src.cv.grid", "src.cv.permute", "src.cv.stage5", "src.cv.report", "src.cv.diagnostics",
 ]
 
 

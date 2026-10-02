@@ -80,3 +80,13 @@ def test_level2_idle_attempts_form_one_cluster():
     assert with_idle["sr0_bar"] > base["sr0_bar"]
     only_idle = report.level2_from_series({}, ["z"], 0.95)
     assert only_idle["n_eff"] == 1 and only_idle["sr0_bar"] == 0.0
+
+
+def test_gross_vs_net_diagnostic(cfg5):
+    from src.cv.diagnostics import gross_vs_net
+    per, summ = gross_vs_net(cfg5)
+    assert len(per) == (4 + 2 + 2 + 1 + 2) * 3
+    assert (per["sharpe_gross"] >= per["sharpe_net"] - 1e-9).mean() > 0.95   # издержки снижают
+    assert {"gross_median", "gross_share_pos", "gross_max", "net_max"} <= set(summ.columns)
+    log = T.read_trials(cfg5["paths"]["trials_log"])
+    assert (log["kind"] == "diagnostic").sum() == 2 * len(per)

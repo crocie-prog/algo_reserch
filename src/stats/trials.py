@@ -5,7 +5,9 @@
   по издержкам не пишутся), для аудита уровня 1;
 - attempt — попытка уровня 2 (вариант дизайна × стратегия, 1h, slippage 0),
   только они входят в N для DSR вердиктов;
-- sensitivity — прогоны slippage 0.0005 / 0.001 (не попытки).
+- sensitivity — прогоны slippage 0.0005 / 0.001 (не попытки);
+- diagnostic — диагностика без отбора (например, валовая и чистая
+  доходность всей сетки, src.cv.diagnostics); в N не входит.
 Прогоны 15m пишутся как train с вариантом tf=15m; attempt для них нет.
 Каждая запись — с меткой времени и коротким хэшем git.
 """
@@ -19,7 +21,7 @@ import pandas as pd
 
 COLUMNS = ["time_utc", "git", "kind", "variant", "strategy", "tf", "symbol", "fold",
            "params", "sharpe", "n_obs", "note"]
-KINDS = ("train", "attempt", "sensitivity")
+KINDS = ("train", "attempt", "sensitivity", "diagnostic")
 
 
 def git_hash() -> str:
