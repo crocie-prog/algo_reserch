@@ -19,7 +19,7 @@ MODULES = [
     "src.cv.walkforward", "src.cv.purged", "src.cv.cpcv",
     "src.portfolio.weights", "src.portfolio.aggregate",
     "src.stats.sharpe", "src.stats.lw", "src.stats.bootstrap",
-    "src.stats.dsr", "src.stats.ce", "src.stats.trials",
+    "src.stats.dsr", "src.stats.ce", "src.stats.trials", "src.stats.neff",
 ]
 
 
