@@ -78,13 +78,28 @@ walk_forward:
   min_train_months: 12      # минимальное обучающее окно
   rolling_train_months: 12  # длина скользящего окна; пересмотреть на этапе 6
 
-selection:
-  top_k: 10
-  min_train_sharpe: 0.3     # порог отказа от торговли (значение автора, не обосновано; этап 5)
-  min_trades_per_year:      # предварительно; утвердить на этапе 5
+selection:                  # docs/preregistration.md §3–§4, §8
+  top_k_max: 10             # top-k = min(top_k_max, ⌈N_pass / top_k_div⌉)
+  top_k_div: 4
+  cost_ratio_max: 0.2       # отсечение по cost_to_target / cost_to_width / cost_to_band
+  train_dsr_min: 0.5        # торговать в фолде, только если train-DSR лучшей ≥ порога
+  neff_share: 0.95          # N_eff = число собственных значений на эту долю следа
+  min_trades_per_year:      # фильтр частоты на train
     1h: 12
     15m: 24
     1d: 6
+
+stage5:                     # docs/preregistration.md
+  train_end_exclusive: "2024-01-01"
+  tfs: [1h, 15m]            # 1h — основной; 15m — проверка, не попытки
+  schemes: [expanding, rolling]
+  slippage: [0.0, 0.0005, 0.001]   # 0 — основной; остальные — sensitivity
+  primary: {scheme: expanding, slippage: 0.0, rule: ensemble}
+  s6_train_from: "2022-01-01"      # вариант S6 — попытка
+  oos_min_trades: 30        # меньше сделок OOS у пары — «недостаточно данных»
+  permutations: 20          # базовая линия шума (диагностика, не попытка)
+  permutation_block: 1D     # перемешиваются целые сутки UTC
+  out_dir: results/stage5
 
 strategies:
   s2:
@@ -122,7 +137,22 @@ strategies:
       1h: 4                     # 4 часа; предварительно
       15m: 16                   # 4 часа; предварительно
 
-grids: {}                       # сетки параметров по ТФ — этапы 3 и 5
+grids:                          # docs/preregistration.md §2; 15m — окна в барах ×4
+  s1_zscore:
+    1h:  {w: [24, 48, 72, 120, 168, 336], z_entry: [1.5, 2.0, 2.5, 3.0], z_exit: [0.0, 0.5, 1.0]}
+    15m: {w: [96, 192, 288, 480, 672, 1344], z_entry: [1.5, 2.0, 2.5, 3.0], z_exit: [0.0, 0.5, 1.0]}
+  s3_donchian:
+    1h:  {w: [24, 36, 48, 72, 96, 120, 168, 240, 336, 504]}
+    15m: {w: [96, 144, 192, 288, 384, 480, 672, 960, 1344, 2016]}
+  s4_supertrend:
+    1h:  {n: [24, 72], m: [2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]}
+    15m: {n: [96, 288], m: [2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]}
+  s5_pivot:
+    1h:  {}
+    15m: {}
+  s6_vwap:
+    1h:  {k: [1.5, 2.0, 2.5, 3.0], e: [0.0, 0.25, 0.5, 1.0]}
+    15m: {k: [1.5, 2.0, 2.5, 3.0], e: [0.0, 0.25, 0.5, 1.0]}
 
 portfolio:
   msp_strategies: [S1, S3, S4, S5, S6]   # эффективных стратегий пять (S2 ≡ частный случай S1)

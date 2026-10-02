@@ -42,3 +42,18 @@ def test_strategy_interface(name):
     mod = importlib.import_module(name)
     assert callable(mod.signal) and callable(mod.warmup)
     assert isinstance(mod.WARMUP_PARAMS, tuple)
+
+
+def test_grids_match_preregistration():
+    import math
+    from src.config import load_config
+    g = load_config()["grids"]
+    sizes = {s: math.prod(len(v) for v in g[s]["1h"].values()) if g[s]["1h"] else 1 for s in g}
+    assert sizes == {"s1_zscore": 72, "s3_donchian": 10, "s4_supertrend": 20,
+                     "s5_pivot": 1, "s6_vwap": 16}
+    assert sum(sizes.values()) == 119
+    assert "s2_bollinger" not in g
+    # 15m: те же горизонты в часах (окна ×4)
+    assert g["s1_zscore"]["15m"]["w"] == [4 * w for w in g["s1_zscore"]["1h"]["w"]]
+    assert g["s3_donchian"]["15m"]["w"] == [4 * w for w in g["s3_donchian"]["1h"]["w"]]
+    assert g["s4_supertrend"]["15m"]["n"] == [4 * n for n in g["s4_supertrend"]["1h"]["n"]]
