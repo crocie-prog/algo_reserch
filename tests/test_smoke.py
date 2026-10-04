@@ -36,7 +36,7 @@ def test_config_basic():
     assert cfg["periods"]["train_end"] < cfg["periods"]["test_start"]
     assert cfg["costs"]["fee_per_side"] == 0.001
     assert cfg["costs"]["rf"] == 0.0
-    assert set(cfg["selection"]["min_trades_per_year"]) == {"1h", "15m", "1d"}
+    assert set(cfg["selection"]["min_trades_per_year"]) == {"1h", "15m", "4h", "1d"}
 
 
 @pytest.mark.parametrize("name", [m for m in MODULES if m.startswith("src.strategies.s")])
