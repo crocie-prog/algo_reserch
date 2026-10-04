@@ -21,7 +21,7 @@ MODULES = [
     "src.stats.sharpe", "src.stats.lw", "src.stats.bootstrap",
     "src.stats.dsr", "src.stats.ce", "src.stats.trials", "src.stats.neff",
     "src.cv.grid", "src.cv.permute", "src.cv.stage5", "src.cv.report", "src.cv.diagnostics",
-    "src.cv.stage6", "src.data.select_universe", "src.data.liquidity", "src.cv.h2", "src.cv.h3", "src.cv.h3b",
+    "src.cv.stage6", "src.data.select_universe", "src.data.liquidity", "src.cv.h2", "src.cv.h3", "src.cv.h3b", "src.cv.h4", "src.strategies.s4_sma", "src.strategies.sma_timing", "src.strategies.sma_filter",
 ]
 
 
@@ -40,7 +40,8 @@ def test_config_basic():
     assert set(cfg["selection"]["min_trades_per_year"]) == {"1h", "15m", "4h", "1d"}
 
 
-@pytest.mark.parametrize("name", [m for m in MODULES if m.startswith("src.strategies.s")])
+@pytest.mark.parametrize("name", [m for m in MODULES if m.startswith("src.strategies.s")
+                                  and m != "src.strategies.sma_filter"])
 def test_strategy_interface(name):
     mod = importlib.import_module(name)
     assert callable(mod.signal) and callable(mod.warmup)
@@ -51,7 +52,9 @@ def test_grids_match_preregistration():
     import math
     from src.config import load_config
     g = load_config()["grids"]
-    sizes = {s: math.prod(len(v) for v in g[s]["1h"].values()) if g[s]["1h"] else 1 for s in g}
+    sizes = {s: math.prod(len(v) for v in g[s]["1h"].values()) if g[s]["1h"] else 1
+             for s in g if "1h" in g[s]}                       # сетки H1 (1h)
+    assert g["s4_sma"]["4h"] == g["s4_supertrend"]["4h"]      # H4: сетка S4-4h без изменений
     assert sizes == {"s1_zscore": 72, "s3_donchian": 10, "s4_supertrend": 20,
                      "s5_pivot": 1, "s6_vwap": 16}
     assert sum(sizes.values()) == 119

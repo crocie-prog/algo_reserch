@@ -63,6 +63,8 @@ paths:
   h3_verdict: docs/h3_verdict.md         # вердикт H3 (в git)
   h3b_out: results/h3b                   # результаты H3b (не в git)
   h3b_verdict: docs/h3b_verdict.md       # вердикт H3b (в git)
+  h4_out: results/h4                     # результаты H4 (не в git)
+  h4_verdict: docs/h4_verdict.md         # вердикт H4 (в git)
 
 periods:                    # схема с 2026-10-04 (docs/research_program.md)
   train_end: "2024-12-31"   # включительно
@@ -126,6 +128,9 @@ stage5:                     # docs/preregistration.md
   permutation_block: 1D     # перемешиваются целые сутки UTC
 
 strategies:
+  sma_filter:               # H4: фильтр направления и тайминг SMA (не оптимизируется)
+    bars:
+      4h: 1200              # 200 дней × 6 рабочих баров 4h
   s2:
     corr_with_s1_exclude: 0.8   # выше — кандидат на исключение из МСП
     # S2(w, k) ≡ S1(w, z_entry=k, z_exit=0): подмножество сетки S1.
@@ -210,6 +215,8 @@ grids:                          # docs/preregistration.md §2; 15m — окна 
     1h:  {n: [24, 72], m: [2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]}
     4h:  {n: [6, 18], m: [1.5, 2.0, 2.5, 3.0, 3.5, 4.5, 5.5, 7.0, 8.5, 10.0]}   # H3
     15m: {n: [96, 288], m: [2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]}
+  s4_sma:                   # H4: сетка S4-4h, SMA из strategies.sma_filter
+    4h:  {n: [6, 18], m: [1.5, 2.0, 2.5, 3.0, 3.5, 4.5, 5.5, 7.0, 8.5, 10.0]}
   s5_pivot:
     1h:  {}
     15m: {}
@@ -251,3 +258,18 @@ h3b:                        # docs/preregistration_h3b.md
   min_traded: 2             # торговали ≥ 2 из 3 целевых пар
   permutations: 20
   weak_share: 0.25          # доля перестановок, прошедших критерий, → «слабое подтверждение»
+
+h4:                         # docs/preregistration_h4.md
+  strategy: s4_sma          # попытка 1: S4 + фильтр SMA_200d (с отбором)
+  timing: sma_timing        # попытка 2: тайминг SMA_200d (без отбора)
+  control: s4_supertrend    # контроль (а): S4 без фильтра
+  tf: 4h
+  scheme: expanding
+  train_end_exclusive: "2025-01-01"   # все фолды 2022–2024
+  slippage: [0.0, 0.0005]
+  min_traded: 2
+  t_candidate: 1.0
+  t_significant: 2.0
+  dsr_significant: 0.95
+  permutations: 20
+  weak_share: 0.25

@@ -41,14 +41,28 @@ from src.stats.sharpe import sharpe_se_lo
 log = logging.getLogger("h3b")
 
 
-def _end(cfg: dict) -> str:
-    t = pd.Timestamp(cfg["h3b"]["train_end_exclusive"]) - pd.Timedelta(days=1)
+def _end(cfg: dict, section: str = "h3b") -> str:
+    t = pd.Timestamp(cfg[section]["train_end_exclusive"]) - pd.Timedelta(days=1)
     return t.date().isoformat()
 
 
-def _load_pair(cfg: dict, symbol: str, tf: str):
-    e = _end(cfg)
+def _load_pair(cfg: dict, symbol: str, tf: str, section: str = "h3b"):
+    e = _end(cfg, section)
     return load(symbol, tf, end=e, cfg=cfg), load_funding(symbol, end=e, cfg=cfg)
+
+
+def fold_list(cfg: dict, section: str, symbol: str, index: pd.DatetimeIndex) -> list:
+    """Фолды гипотезы: expanding до train_end_exclusive; при val_from — только
+    кварталы валидации не раньше val_from."""
+    h, wfc = cfg[section], cfg["walk_forward"]
+    fl = folds(index, scheme=h["scheme"], step_months=wfc["step_months"],
+               min_train_months=wfc["min_train_months"],
+               train_end=pd.Timestamp(h["train_end_exclusive"], tz="UTC"),
+               usable_from=usable_from(cfg, symbol),
+               rolling_train_months=wfc["rolling_train_months"])
+    if h.get("val_from"):
+        fl = [f for f in fl if f.val_start >= pd.Timestamp(h["val_from"], tz="UTC")]
+    return fl
 
 
 def _quarters(index: pd.DatetimeIndex) -> np.ndarray:
@@ -63,25 +77,21 @@ def _ew(series: dict[str, pd.Series]) -> pd.Series:
 
 
 def run_variant(cfg: dict, *, slippage: float, symbols: list[str], tradable_fn=None,
-                data_fn=None, journal_kind: str | None = "train") -> dict:
-    """Один прогон: OOS-ряды пар 2024 (net, лонг, шорт), таблицы."""
-    h = cfg["h3b"]
+                data_fn=None, journal_kind: str | None = "train", section: str = "h3b",
+                strategy: str | None = None) -> dict:
+    """Один прогон walk-forward с отбором: OOS-ряды пар (net, лонг, шорт), таблицы.
+    section — раздел config гипотезы (h3b, h4); strategy — вместо h[strategy]."""
+    h = cfg[section]
     tf, ppy = h["tf"], periods_per_year(h["tf"], cfg)
-    wfc = cfg["walk_forward"]
-    train_end = pd.Timestamp(h["train_end_exclusive"], tz="UTC")
-    val_from = pd.Timestamp(h["val_from"], tz="UTC")
-    vid = f"h3b_{tf}_{h['scheme']}_slip{slippage:g}"
+    strategy = strategy or h["strategy"]
+    vid = f"{section}_{strategy}_{tf}_{h['scheme']}_slip{slippage:g}"
     tradable_fn = tradable_fn or _tradable_map
-    out = {"net": {}, "long": {}, "short": {}, "plateau": {}, "held": {}}
+    out = {"net": {}, "long": {}, "short": {}, "plateau": {}, "held": {}, "pos": {}}
     pairs, ftabs = [], []
     for sym in symbols:
-        df, fund = data_fn(sym) if data_fn else _load_pair(cfg, sym, tf)
-        fl = folds(df.index, scheme=h["scheme"], step_months=wfc["step_months"],
-                   min_train_months=wfc["min_train_months"], train_end=train_end,
-                   usable_from=usable_from(cfg, sym),
-                   rolling_train_months=wfc["rolling_train_months"])
-        fl = [f for f in fl if f.val_start >= val_from]
-        gd = build_grid(df, fund, strategy=h["strategy"], tf=tf, symbol=sym, cfg=cfg,
+        df, fund = data_fn(sym) if data_fn else _load_pair(cfg, sym, tf, section)
+        fl = fold_list(cfg, section, sym, df.index)
+        gd = build_grid(df, fund, strategy=strategy, tf=tf, symbol=sym, cfg=cfg,
                         slippage=slippage)
         wf = walk_forward(gd, df, fund, fl, cfg, slippage=slippage, periods_per_year=ppy,
                           tradable=tradable_fn(cfg, sym, fl))
@@ -93,6 +103,7 @@ def run_variant(cfg: dict, *, slippage: float, symbols: list[str], tradable_fn=N
         out["long"][sym] = net.where(w["held"] > 0, 0.0)
         out["short"][sym] = net.where(w["held"] < 0, 0.0)
         out["held"][sym] = w["held"]
+        out["pos"][sym] = w["pos"]
         btp = wf.bt_plateau
         out["plateau"][sym] = btp.loc[mask, "net"].rename(sym)
         m = metrics(bt, periods_per_year=ppy, mask=mask)
