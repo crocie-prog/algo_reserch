@@ -61,6 +61,8 @@ paths:
   h2_verdict: docs/h2_verdict.md         # вердикт H2 (в git)
   h3_out: results/h3                     # результаты H3 (не в git)
   h3_verdict: docs/h3_verdict.md         # вердикт H3 (в git)
+  h3b_out: results/h3b                   # результаты H3b (не в git)
+  h3b_verdict: docs/h3b_verdict.md       # вердикт H3b (в git)
 
 periods:                    # схема с 2026-10-04 (docs/research_program.md)
   train_end: "2024-12-31"   # включительно
@@ -238,3 +240,14 @@ h3:                         # docs/preregistration_h3.md
   t_significant: 2.0
   dsr_significant: 0.95
   permutations: 20          # базовая линия шума (диагностика)
+
+h3b:                        # docs/preregistration_h3b.md
+  strategy: s4_supertrend
+  tf: 4h
+  scheme: expanding
+  train_end_exclusive: "2025-01-01"
+  val_from: "2024-01-01"    # валидация — только кварталы 2024
+  slippage: [0.0, 0.0005]   # 0 — попытка; 0.0005 — чувствительность
+  min_traded: 2             # торговали ≥ 2 из 3 целевых пар
+  permutations: 20
+  weak_share: 0.25          # доля перестановок, прошедших критерий, → «слабое подтверждение»
