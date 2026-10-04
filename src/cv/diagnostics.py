@@ -20,6 +20,7 @@ import pandas as pd
 
 from src.config import load_config, periods_per_year
 from src.cv.grid import build_grid, window_stats
+from src.cv.walkforward import registered_end
 from src.data.load import load, load_funding
 from src.data.universe import usable_from
 from src.stats import trials as T
@@ -39,8 +40,8 @@ def gross_vs_net(cfg: dict, *, tf: str = "1h", strategies: list[str] | None = No
     gross_cfg["costs"]["include_funding"] = False
     rows = []
     for symbol in symbols or cfg["universe"]["symbols"]:
-        df = load(symbol, tf, cfg=cfg)
-        fund = load_funding(symbol, cfg=cfg)
+        df = load(symbol, tf, end=registered_end(cfg), cfg=cfg)
+        fund = load_funding(symbol, end=registered_end(cfg), cfg=cfg)
         start = usable_from(cfg, symbol) or df.index[0]
         for strategy in strategies or STRATEGIES:
             out = {}

@@ -47,6 +47,17 @@ class Fold:
     val_end: pd.Timestamp
 
 
+def registered_end(cfg: dict) -> str:
+    """Последний день train гипотез H1–H3 (stage5.train_end_exclusive − 1 день).
+
+    Их прогоны грузят данные строго до этой даты: после смены периодов
+    (train до 2024-12-31) load() по умолчанию отдаёт и 2024 год, а он не
+    должен попадать ни в сигналы, ни в перестановки базовой линии шума.
+    """
+    t = pd.Timestamp(cfg["stage5"]["train_end_exclusive"]) - pd.Timedelta(days=1)
+    return t.date().isoformat()
+
+
 def _align_up(ts: pd.Timestamp, step_months: int) -> pd.Timestamp:
     """Ближайшее начало периода (месяцы 1, 1+step, …) не раньше ts, 00:00 UTC."""
     start = pd.Timestamp(year=ts.year, month=1, day=1, tz=ts.tz)

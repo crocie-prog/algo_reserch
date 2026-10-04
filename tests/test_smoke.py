@@ -33,7 +33,8 @@ def test_import(name):
 def test_config_basic():
     cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
     assert cfg["universe"]["symbols"] == ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-    assert cfg["periods"]["train_end"] < cfg["periods"]["test_start"]
+    assert cfg["periods"]["train_end"] == "2024-12-31" and cfg["periods"]["test_start"] == "2025-01-01"
+    assert cfg["periods"]["test_end"] is None
     assert cfg["costs"]["fee_per_side"] == 0.001
     assert cfg["costs"]["rf"] == 0.0
     assert set(cfg["selection"]["min_trades_per_year"]) == {"1h", "15m", "4h", "1d"}

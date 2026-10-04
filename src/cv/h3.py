@@ -26,9 +26,8 @@ from src.backtest.metrics import metrics
 from src.config import load_config, periods_per_year, tf_delta
 from src.cv import report
 from src.cv.grid import build_grid
-from src.cv.h2 import _sharpe, _tradable_map
+from src.cv.h2 import _load_pair, _sharpe, _tradable_map
 from src.cv.walkforward import folds, walk_forward
-from src.data.load import load, load_funding
 from src.data.universe import usable_from
 from src.stats import trials as T
 from src.stats.dsr import moments, psr
@@ -65,7 +64,7 @@ def run_variant(cfg: dict, *, strategy: str, slippage: float, symbols: list[str]
     series = {r: {} for r in RULES}
     pairs, ftabs = [], []
     for sym in symbols:
-        df, fund = data_fn(sym) if data_fn else (load(sym, tf, cfg=cfg), load_funding(sym, cfg=cfg))
+        df, fund = data_fn(sym) if data_fn else _load_pair(cfg, sym, tf)
         fl = folds(df.index, scheme=h["scheme"], step_months=wfc["step_months"],
                    min_train_months=wfc["min_train_months"], train_end=train_end,
                    usable_from=usable_from(cfg, sym),
@@ -134,7 +133,7 @@ def run(cfg: dict, *, symbols: list[str] | None = None, n_perm: int | None = Non
 
     n_perm = int(n_perm if n_perm is not None else h["permutations"])
     rng = np.random.default_rng(seed)
-    base = {s: (data_fn(s) if data_fn else (load(s, tf, cfg=cfg), load_funding(s, cfg=cfg)))
+    base = {s: (data_fn(s) if data_fn else _load_pair(cfg, s, tf))
             for s in symbols}
     noise = []
     for i in range(n_perm):

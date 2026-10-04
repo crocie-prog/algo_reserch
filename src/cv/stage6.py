@@ -27,6 +27,7 @@ import pandas as pd
 from src.config import load_config, periods_per_year
 from src.cv import cpcv as C
 from src.cv.grid import build_grid, window_rows
+from src.cv.walkforward import registered_end
 from src.data.load import load, load_funding
 from src.data.universe import usable_from
 from src.stats import trials as T
@@ -66,8 +67,8 @@ def run(cfg: dict, *, strategies: list[str] | None = None,
     for strategy in strategies:
         nets, poss, path_nets = {}, {}, {}
         for symbol in symbols:
-            df = load(symbol, tf, cfg=cfg)
-            fund = load_funding(symbol, cfg=cfg)
+            df = load(symbol, tf, end=registered_end(cfg), cfg=cfg)
+            fund = load_funding(symbol, end=registered_end(cfg), cfg=cfg)
             start = usable_from(cfg, symbol) or df.index[0]
             gd = build_grid(df, fund, strategy=strategy, tf=tf, symbol=symbol, cfg=cfg,
                             slippage=0.0)

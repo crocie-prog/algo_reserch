@@ -26,7 +26,7 @@ import pandas as pd
 from src.backtest.metrics import metrics
 from src.config import load_config, periods_per_year
 from src.cv.grid import build_grid
-from src.cv.walkforward import folds, walk_forward
+from src.cv.walkforward import folds, registered_end, walk_forward
 from src.data.load import load, load_funding
 from src.data.universe import usable_from
 from src.stats import trials as T
@@ -116,8 +116,8 @@ def run_batch(cfg: dict, *, tfs: list[str], slippages: list[float], schemes: lis
         for slip in slippages:
             sinks: dict[str, VariantSink] = {}
             for symbol in symbols:
-                df = load(symbol, tf, cfg=cfg)
-                fund = load_funding(symbol, cfg=cfg)
+                df = load(symbol, tf, end=registered_end(cfg), cfg=cfg)
+                fund = load_funding(symbol, end=registered_end(cfg), cfg=cfg)
                 uf = usable_from(cfg, symbol)
                 for strategy in strategies:
                     t0 = time.time()
@@ -187,8 +187,8 @@ def noise_baseline(cfg: dict, *, n_perm: int | None = None, strategies: list[str
     rng = np.random.default_rng(seed)
     rows = []
     for symbol in symbols or cfg["universe"]["symbols"]:
-        df0 = load(symbol, tf, cfg=cfg)
-        fund = load_funding(symbol, cfg=cfg)
+        df0 = load(symbol, tf, end=registered_end(cfg), cfg=cfg)
+        fund = load_funding(symbol, end=registered_end(cfg), cfg=cfg)
         fl = folds(df0.index, scheme=prim["scheme"], step_months=wfc["step_months"],
                    min_train_months=wfc["min_train_months"], train_end=train_end,
                    usable_from=usable_from(cfg, symbol),

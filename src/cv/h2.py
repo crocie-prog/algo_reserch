@@ -25,7 +25,7 @@ from src.backtest.metrics import metrics
 from src.config import load_config, periods_per_year
 from src.cv import report
 from src.cv.grid import build_grid
-from src.cv.walkforward import folds, walk_forward
+from src.cv.walkforward import folds, registered_end, walk_forward
 from src.data.liquidity import no_trade_share, tradable
 from src.data.load import load, load_funding
 from src.data.universe import usable_from
@@ -39,6 +39,12 @@ log = logging.getLogger("h2")
 def _sharpe(x: pd.Series, ppy: float) -> float:
     sd = x.std(ddof=1)
     return float(x.mean() / sd * np.sqrt(ppy)) if len(x) > 1 and sd > 0 else np.nan
+
+
+def _load_pair(cfg: dict, symbol: str, tf: str) -> tuple[pd.DataFrame, pd.Series]:
+    """Свечи и funding до зарегистрированной границы train H1–H3."""
+    end = registered_end(cfg)
+    return load(symbol, tf, end=end, cfg=cfg), load_funding(symbol, end=end, cfg=cfg)
 
 
 def _tradable_map(cfg: dict, symbol: str, fl) -> dict:
@@ -60,7 +66,7 @@ def run_variant(cfg: dict, *, slippage: float, symbols: list[str], tradable_fn=N
     tradable_fn = tradable_fn or _tradable_map
     series, pairs, ftabs = {}, [], []
     for sym in symbols:
-        df, fund = data_fn(sym) if data_fn else (load(sym, tf, cfg=cfg), load_funding(sym, cfg=cfg))
+        df, fund = data_fn(sym) if data_fn else _load_pair(cfg, sym, tf)
         fl = folds(df.index, scheme=r["scheme"], step_months=wfc["step_months"],
                    min_train_months=wfc["min_train_months"], train_end=train_end,
                    usable_from=usable_from(cfg, sym),
@@ -121,7 +127,7 @@ def run(cfg: dict, *, symbols: list[str] | None = None, n_perm: int | None = Non
     # базовая линия шума (slippage 0, та же процедура, карта торгуемости — по реальным данным)
     n_perm = int(n_perm if n_perm is not None else r["permutations"])
     rng = np.random.default_rng(seed)
-    base = {s: (data_fn(s) if data_fn else (load(s, tf, cfg=cfg), load_funding(s, cfg=cfg)))
+    base = {s: (data_fn(s) if data_fn else _load_pair(cfg, s, tf))
             for s in symbols}
     noise = []
     for i in range(n_perm):

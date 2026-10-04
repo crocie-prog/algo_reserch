@@ -50,6 +50,8 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
     p = cfg["periods"]
     if pd.Timestamp(p["train_end"]) >= pd.Timestamp(p["test_start"]):
         raise ValueError("periods.train_end должен быть раньше test_start")
+    if p.get("test_end") is not None and pd.Timestamp(p["test_end"]) < pd.Timestamp(p["test_start"]):
+        raise ValueError("periods.test_end раньше test_start")
     if not cfg["universe"]["symbols"]:
         raise ValueError("universe.symbols пуст")
     for tf in cfg["timeframes"]["download"]:

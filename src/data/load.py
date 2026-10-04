@@ -2,14 +2,15 @@
 
 Защита тестового периода: по умолчанию данные обрезаются на train_end.
 Запрос с end > train_end без allow_test=True вызывает PeriodAccessError.
+test_end = null в config — test до конца данных.
 
 Границы:
 - start — включительно по времени открытия бара;
 - end — включительно; если у end нет времени (00:00), это ДАТА и
-  включается весь день: open < end + 1 день. train_end = 2023-12-31 →
-  последний бар 1h — 2023-12-31 23:00.
+  включается весь день: open < end + 1 день. train_end = 2024-12-31 →
+  последний бар 1h — 2024-12-31 23:00.
 - funding: метка T включается, если T ≤ исключительной верхней границы
-  баров, то есть начисление 2024-01-01 00:00 входит в train: оно относится
+  баров, то есть начисление 2025-01-01 00:00 входит в train: оно относится
   к последнему бару train (бар, заканчивающийся в T).
 """
 from __future__ import annotations
@@ -28,6 +29,9 @@ class PeriodAccessError(RuntimeError):
     """Попытка прочитать тестовый период без явного разрешения."""
 
 
+_END_OF_DATA = pd.Timestamp("2262-01-01", tz="UTC")   # test_end = null: без верхней границы
+
+
 def _utc(ts) -> pd.Timestamp:
     t = pd.Timestamp(ts)
     return t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
@@ -36,7 +40,8 @@ def _utc(ts) -> pd.Timestamp:
 def _bounds(cfg: dict, start, end, allow_test: bool) -> tuple[pd.Timestamp | None, pd.Timestamp]:
     """(нижняя включительная, верхняя ИСКЛЮЧИТЕЛЬНАЯ) граница по open."""
     train_excl = _utc(cfg["periods"]["train_end"]) + pd.Timedelta(days=1)
-    test_excl = _utc(cfg["periods"]["test_end"]) + pd.Timedelta(days=1)
+    te = cfg["periods"].get("test_end")
+    test_excl = _utc(te) + pd.Timedelta(days=1) if te is not None else _END_OF_DATA
     if end is None:
         upper = test_excl if allow_test else train_excl
     else:
