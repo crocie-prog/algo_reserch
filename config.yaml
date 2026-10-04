@@ -59,6 +59,8 @@ paths:
   meta_h2: data/meta/universe_h2.csv     # universe новых пар H2
   h2_out: results/h2                     # результаты H2 (не в git)
   h2_verdict: docs/h2_verdict.md         # вердикт H2 (в git)
+  h3_out: results/h3                     # результаты H3 (не в git)
+  h3_verdict: docs/h3_verdict.md         # вердикт H3 (в git)
 
 periods:
   train_end: "2023-12-31"   # включительно
@@ -107,6 +109,7 @@ selection:                  # docs/preregistration.md §3–§4, §8
   min_trades_per_year:      # фильтр частоты на train
     1h: 12
     15m: 24
+    4h: 12                  # H3: как 1h (минимум информации в год не зависит от ТФ)
     1d: 6
 
 stage5:                     # docs/preregistration.md
@@ -199,9 +202,11 @@ grids:                          # docs/preregistration.md §2; 15m — окна 
     15m: {w: [96, 192, 288, 480, 672, 1344], z_entry: [1.5, 2.0, 2.5, 3.0], z_exit: [0.0, 0.5, 1.0]}
   s3_donchian:
     1h:  {w: [24, 36, 48, 72, 96, 120, 168, 240, 336, 504]}
+    4h:  {w: [6, 9, 12, 18, 24, 30, 42, 60, 84, 126]}            # H3: часы / 4
     15m: {w: [96, 144, 192, 288, 384, 480, 672, 960, 1344, 2016]}
   s4_supertrend:
     1h:  {n: [24, 72], m: [2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]}
+    4h:  {n: [6, 18], m: [1.5, 2.0, 2.5, 3.0, 3.5, 4.5, 5.5, 7.0, 8.5, 10.0]}   # H3
     15m: {n: [96, 288], m: [2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]}
   s5_pivot:
     1h:  {}
@@ -222,3 +227,14 @@ stats:
     seed: 42
   ce_gammas: [3, 5, 10]
   alpha: 0.05
+
+h3:                         # docs/preregistration_h3.md
+  strategies: [s3_donchian, s4_supertrend]
+  tf: 4h
+  scheme: expanding
+  slippage: [0.0, 0.0005]   # 0 — попытки; 0.0005 — чувствительность
+  pairs_min_positive: 10    # знаковый тест: не меньше 10 из 13
+  t_candidate: 1.0
+  t_significant: 2.0
+  dsr_significant: 0.95
+  permutations: 20          # базовая линия шума (диагностика)
