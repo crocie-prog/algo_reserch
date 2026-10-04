@@ -27,12 +27,12 @@ def built(cfg):
     native = quality.aggregate(m1, "1h").drop(columns="n")
     native["turnover"] *= 1.01                      # родной расходится
     store.write(cfg["paths"]["raw"], "X", "1h", native)
-    for tf in ("1m", "15m", "1h", "1d"):
+    for tf in ("1m", "15m", "1h", "4h", "1d"):
         clean.build_clean(cfg, "X", tf)
     return cfg, m1
 
 
-@pytest.mark.parametrize("tf", ["15m", "1h", "1d"])
+@pytest.mark.parametrize("tf", ["15m", "1h", "4h", "1d"])
 def test_clean_equals_aggregate_of_clean_1m(built, tf):
     cfg, _ = built
     c1m = store.read(cfg["paths"]["clean"], "X", "1m")
@@ -71,3 +71,25 @@ def test_report_has_native_diagnostics(built):
     assert row["agg_compared"] == 72 and row["agg_mismatch"] == 71
     bars = summ[(summ.kind == "bars") & (summ.tf == "1h")].iloc[0]
     assert bars["downtime_bars"] == 1
+
+
+def test_4h_bins_anchor_and_1d_from_4h(built):
+    """4h: корзины 00, 04, …, 20 UTC; 1d = точный агрегат 4h (OHLC, суммы, простой)."""
+    cfg, _ = built
+    h4 = store.read(cfg["paths"]["clean"], "X", "4h")
+    d1 = store.read(cfg["paths"]["clean"], "X", "1d")
+    assert set(h4.index.hour) == {0, 4, 8, 12, 16, 20} and (h4.index.minute == 0).all()
+    assert pd.Timestamp("2022-01-01 00:00", tz="UTC") in h4.index      # стык партиций 1m
+    g = h4.groupby(h4.index.floor("1D"))
+    agg = pd.DataFrame({"open": g["open"].first(), "high": g["high"].max(),
+                        "low": g["low"].min(), "close": g["close"].last(),
+                        "volume": g["volume"].sum(), "turnover": g["turnover"].sum(),
+                        "downtime_share": g["downtime_share"].mean(), "n": g.size()})
+    agg = agg[agg["n"] == 6]
+    assert d1.index.equals(agg.index)
+    for c in ["open", "high", "low", "close"]:
+        assert np.array_equal(d1[c].to_numpy(), agg[c].to_numpy()), c
+    for c in ["volume", "turnover", "downtime_share"]:          # суммы — до округления
+        assert np.allclose(d1[c].to_numpy(), agg[c].to_numpy(), rtol=1e-12, atol=0), c
+    t = pd.Timestamp("2021-12-31 04:00", tz="UTC")              # простой 05:00–06:30 → 90 из 240
+    assert h4.loc[t, "downtime_share"] == pytest.approx(90 / 240) and not h4.loc[t, "is_downtime"]

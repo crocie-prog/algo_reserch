@@ -15,7 +15,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config.yaml"
 
-_TF_MINUTES = {"1m": 1, "15m": 15, "1h": 60, "1d": 1440}
+_TF_MINUTES = {"1m": 1, "15m": 15, "1h": 60, "4h": 240, "1d": 1440}
 
 
 def tf_minutes(tf: str) -> int:

@@ -310,7 +310,7 @@ def _merge_report(path, new: pd.DataFrame, symbols: list[str]) -> pd.DataFrame:
     """Заменить в CSV строки обработанных символов, строки прочих сохранить."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
-        old = pd.read_csv(path)
+        old = pd.read_csv(path, low_memory=False)
         old = old[~old["symbol"].isin(symbols)]
         new = pd.concat([old, new], ignore_index=True) if len(old) else new
     new.to_csv(path, index=False)
@@ -320,8 +320,8 @@ def _merge_report(path, new: pd.DataFrame, symbols: list[str]) -> pd.DataFrame:
 def run_all(cfg: dict, symbols: list[str] | None = None, tfs: list[str] | None = None) -> pd.DataFrame:
     """Построить clean и отчёт по символам, по одному символу за раз.
 
-    clean 1m — по одной годовой партиции; clean 15m/1h/1d — агрегацией clean 1m
-    (см. src.data.clean). Диагностика: родные бары биржи из raw сверяются
+    clean 1m — по одной годовой партиции; clean 15m/1h/1d и производные ТФ
+    (timeframes.derived, напр. 4h) — агрегацией clean 1m (см. src.data.clean). Диагностика: родные бары биржи из raw сверяются
     с агрегатом clean 1m (quality.native_vs_1m), расхождения — в отчёт.
     В отчётах заменяются только строки обработанных символов.
 
@@ -329,12 +329,12 @@ def run_all(cfg: dict, symbols: list[str] | None = None, tfs: list[str] | None =
         Сводка по обработанным символам (kind = bars | consistency | funding).
     """
     symbols = symbols or cfg["universe"]["symbols"]
-    tfs = tfs or cfg["timeframes"]["download"]
+    tfs = tfs or cfg["timeframes"]["download"] + cfg["timeframes"].get("derived", [])
     croot, rroot = cfg["paths"]["clean"], cfg["paths"]["raw"]
     all_iss, all_summ = [], []
     for symbol in symbols:
         issues, summ = [], []
-        for tf in cfg["timeframes"]["download"]:
+        for tf in cfg["timeframes"]["download"] + cfg["timeframes"].get("derived", []):
             info = clean.build_clean(cfg, symbol, tf)
             if info["n_bars"] == 0 or tf not in tfs:
                 continue
